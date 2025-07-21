@@ -1,0 +1,4 @@
+graft src/organs6
+graft docs
+include *.rst
+global-exclude *.pyc
