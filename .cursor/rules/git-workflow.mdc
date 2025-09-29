@@ -1,0 +1,235 @@
+---
+globs: *.py,*.pt,*.xml,*.cfg,*.txt
+description: Flujo de trabajo con Git para el proyecto
+---
+
+# 🌿 Git Workflow - Plone 6 Migration
+
+## 📋 Convenciones de Commits
+
+### Formato de Mensajes
+```
+tipo(scope): descripción breve
+
+Descripción detallada del cambio (opcional)
+
+- Lista de cambios específicos
+- Referencias a issues/tickets
+```
+
+### Tipos de Commit
+- `feat`: Nueva funcionalidad
+- `fix`: Corrección de bugs
+- `migrate`: Cambios de migración
+- `refactor`: Refactorización de código
+- `test`: Añadir o modificar tests
+- `docs`: Documentación
+- `style`: Formato, espacios, etc.
+- `chore`: Tareas de mantenimiento
+
+### Ejemplos
+```bash
+# Migración
+git commit -m "migrate(organs): normalizar infoQuorums para Plone 6"
+
+# Bug fix
+git commit -m "fix(acta): evitar recursión en defaultFactory"
+
+# Nueva funcionalidad
+git commit -m "feat(sessio): añadir validación de quorum"
+
+# Refactorización
+git commit -m "refactor(utils): simplificar función de parsing"
+```
+
+## 🌳 Estrategia de Branches
+
+### Branches Principales
+- `master`: Código estable, listo para producción
+- `develop`: Integración de features, testing
+- `migration`: Rama específica para migración
+
+### Branches de Feature
+- `feature/nombre-funcionalidad`
+- `migrate/nombre-migracion`
+- `fix/nombre-bug`
+- `hotfix/urgencia`
+
+### Ejemplo de Workflow
+```bash
+# Crear branch para migración
+git checkout -b migrate/plone4-to-plone6
+
+# Trabajar en cambios
+git add .
+git commit -m "migrate(organs): normalizar campos JSON"
+
+# Push y crear PR
+git push origin migrate/plone4-to-plone6
+```
+
+## 🔄 Flujo de Migración
+
+### 1. Preparación
+```bash
+# Crear branch de migración
+git checkout -b migrate/organs-plone6
+
+# Asegurar que master está actualizado
+git checkout master
+git pull origin master
+git checkout migrate/organs-plone6
+```
+
+### 2. Desarrollo
+```bash
+# Hacer cambios incrementales
+git add src/genweb.organs/
+git commit -m "migrate(organs): actualizar schemas para Plone 6"
+
+# Continuar con más cambios
+git add src/contentimport/
+git commit -m "migrate(import): normalizar datos de migración"
+```
+
+### 3. Testing
+```bash
+# Ejecutar tests
+bin/test -s genweb.organs
+
+# Si fallan, corregir
+git add .
+git commit -m "fix(tests): corregir tests de migración"
+```
+
+### 4. Integración
+```bash
+# Merge a develop para testing
+git checkout develop
+git merge migrate/organs-plone6
+
+# Testing en develop
+bin/test
+
+# Si todo OK, merge a master
+git checkout master
+git merge develop
+```
+
+## 🚨 Manejo de Conflictos
+
+### Durante Merge
+```bash
+# Si hay conflictos
+git status
+# Editar archivos conflictivos
+git add archivo_resuelto.py
+git commit -m "resolve: conflictos de merge en migración"
+```
+
+### Durante Rebase
+```bash
+# Rebase interactivo
+git rebase -i HEAD~3
+
+# Si hay conflictos
+git add archivo_resuelto.py
+git rebase --continue
+```
+
+## 📦 Tags y Releases
+
+### Crear Tag
+```bash
+# Tag de versión
+git tag -a v1.0.0 -m "Release v1.0.0 - Migración Plone 6"
+
+# Push del tag
+git push origin v1.0.0
+```
+
+### Release Notes
+```bash
+# Generar changelog
+git log --oneline v0.9.0..v1.0.0
+
+# Crear release en GitHub/GitLab
+```
+
+## 🔍 Comandos Útiles
+
+### Historial
+```bash
+# Ver commits recientes
+git log --oneline -10
+
+# Ver cambios en archivo
+git log -p src/genweb.organs/content/sessio/sessio.py
+
+# Ver quién cambió qué
+git blame src/genweb.organs/content/acta/acta.py
+```
+
+### Diferencias
+```bash
+# Ver cambios no staged
+git diff
+
+# Ver cambios staged
+git diff --cached
+
+# Comparar con branch remoto
+git diff origin/master
+```
+
+### Limpieza
+```bash
+# Limpiar archivos no trackeados
+git clean -fd
+
+# Reset suave (mantener cambios)
+git reset --soft HEAD~1
+
+# Reset duro (perder cambios)
+git reset --hard HEAD~1
+```
+
+## 🚀 Comandos de Migración
+
+### Backup
+```bash
+# Crear backup antes de migración
+git tag backup-pre-migration
+
+# Exportar base de datos
+bin/instance export_content
+```
+
+### Rollback
+```bash
+# Volver a versión anterior
+git checkout backup-pre-migration
+
+# O reset a commit específico
+git reset --hard <commit-hash>
+```
+
+## 📋 Checklist de Git
+
+### Antes de Commit
+- [ ] Código funciona correctamente
+- [ ] Tests pasan
+- [ ] Mensaje de commit descriptivo
+- [ ] No hay archivos temporales
+
+### Antes de Push
+- [ ] Rebase con master si es necesario
+- [ ] Resolver conflictos
+- [ ] Verificar que no se rompe nada
+- [ ] Documentar cambios importantes
+
+### Antes de Merge
+- [ ] Code review completado
+- [ ] Tests en CI pasan
+- [ ] Documentación actualizada
+- [ ] Changelog actualizado

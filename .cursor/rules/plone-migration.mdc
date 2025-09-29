@@ -1,0 +1,114 @@
+---
+globs: *.py,*.pt,*.xml,*.json
+description: Reglas específicas para migración de Plone 4 a Plone 6
+---
+
+# 🚀 Reglas de Migración Plone 4 → 6
+
+## 📦 Paquetes de Migración
+
+### collective.exportimport
+- Usar para exportar contenido de Plone 4
+- Configurar en `buildout.cfg` con versión compatible
+- Exportar con `bin/instance export_content`
+
+### contentimport (custom)
+- Personalizar en [src/contentimport/contentimport/import_content.py](mdc:src/contentimport/contentimport/import_content.py)
+- Hook `global_obj_hook_before_deserializing` para normalizar datos
+- Manejar errores de validación específicos de Plone 6
+
+## 🔧 Normalización de Datos
+
+### Campos JSON
+```python
+# Convertir dicts a strings JSON
+if isinstance(val, dict):
+    item['campo'] = json.dumps(val)
+elif val in (None, {}, ''):
+    item['campo'] = '{}'
+```
+
+### Campos DateTime
+```python
+# Manejar fechas de Plone 4
+if 'horaInici' in item:
+    if isinstance(item['horaInici'], str):
+        item['horaInici'] = DateTime(item['horaInici'])
+```
+
+### Campos requeridos
+```python
+# Evitar None en campos requeridos
+if item.get('campo') is None:
+    item['campo'] = ''
+```
+
+## 🎯 Errores Comunes
+
+### ValidationError
+- `Constraint not satisfied` → revisar vocabularios
+- `Object is of wrong type` → normalizar tipos de datos
+- `Required field` → asignar valores por defecto
+
+### TypeError
+- `Object of type DateTime is not JSON serializable` → convertir a string
+- `unhashable type: 'RichTextValue'` → acceder a `.output`
+
+### KeyError
+- `KeyError: 1` en diccionarios → verificar tipos de claves (str vs int)
+
+## 🧩 Genweb.organs Específico
+
+### infoQuorums
+```python
+# Mantener claves como enteros para compatibilidad
+val_int_keys = {int(k): v for k, v in val.items()}
+item['infoQuorums'] = repr(val_int_keys)
+```
+
+### estatsLlista
+- Campo `schema.Choice` con vocabulario restringido
+- Función `llistaEstats` debe parsear HTML correctamente
+- Manejar sufijos de color en valores legacy
+
+### defaultFactory
+- Evitar recursión leyendo del contexto padre
+- Retornar valores por defecto seguros
+- Manejar casos donde el contexto no es adaptable
+
+## 🌐 Internacionalización
+
+### Mensajes en templates
+```html
+<!-- Usar i18n:translate para mensajes migrados -->
+<td i18n:translate="">${data/message}</td>
+```
+
+### Traducciones
+- Verificar que mensajes migrados se traduzcan
+- Usar `context.translate()` en Python cuando sea necesario
+
+## 🔍 Debugging
+
+### ipdb
+```python
+import ipdb; ipdb.set_trace()
+```
+
+### Logs
+```python
+import logging
+logger = logging.getLogger(__name__)
+logger.info(f"Debug: {variable}")
+```
+
+## 📋 Checklist de Migración
+
+- [ ] Exportar contenido de Plone 4
+- [ ] Normalizar datos en `global_obj_hook_before_deserializing`
+- [ ] Verificar vocabularios y campos Choice
+- [ ] Probar creación manual vs migrada
+- [ ] Verificar traducciones
+- [ ] Revisar defaultFactory por recursión
+- [ ] Comprobar tipos de datos (DateTime, RichTextValue)
+- [ ] Validar campos requeridos

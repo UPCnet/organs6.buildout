@@ -1,0 +1,410 @@
+---
+globs: *.cfg,*.txt,*.py
+description: Reglas para configuración de buildout en Plone 6
+---
+
+# 🔧 Buildout Plone 6 - Configuración
+
+## 📦 Estructura de Buildout
+
+```
+organs6.buildout/
+├── buildout.cfg          # Configuración principal
+├── versions.cfg          # Versiones fijas
+├── sources.cfg           # Repositorios de desarrollo
+├── projects.cfg          # Configuración de proyectos
+├── customizeme.cfg       # Personalización local
+├── requirements.txt      # Dependencias Python
+├── organs.cfg            # Configuración completa para desarrollo
+├── zope-only.cfg         # Solo instancias Zope (producción)
+├── zeo-only.cfg          # Solo servidor ZEO (producción)
+├── config/               # Plantillas de configuración
+│   └── templates/        # Plantillas para deployment
+├── deploy/               # Configuraciones de deployment
+├── var/                  # Datos de la aplicación
+│   ├── blobstorage/      # Almacenamiento de blobs
+│   ├── filestorage/      # Base de datos ZODB
+│   └── log/              # Logs de la aplicación
+└── src/                  # Paquetes en desarrollo
+    ├── genweb.organs/
+    ├── genweb6.core/
+    ├── genweb6.theme/
+    ├── genweb6.upc/
+    ├── contentimport/
+    ├── collective.exportimport/
+    ├── collective.recipe.filestorage/
+    └── ftw.casauth/
+```
+
+## 🏗️ Plantillas de Configuración
+
+El proyecto usa un sistema de plantillas para diferentes entornos:
+
+### Configuraciones Principales
+- **Local/Desarrollo**: `organs.cfg` - Configuración completa para desarrollo
+- **Zope Only**: `zope-only.cfg` - Solo instancias Zope (producción)
+- **ZEO Only**: `zeo-only.cfg` - Solo servidor ZEO (producción)
+
+### Plantillas de Bootstrap
+- `bootstrap.sh.in` - Plantilla para local/desarrollo
+- `bootstrap.sh.zope-only.in` - Plantilla para Zope only
+- `bootstrap.sh.zeo-only.in` - Plantilla para ZEO only
+
+### Plantillas de Customización
+- `customizeme.cfg.in` - Configuración local
+- `customizeme.zope-only.cfg.in` - Configuración Zope
+- `customizeme.zeo-only.cfg.in` - Configuración ZEO
+
+### Plantillas de Deployment
+- `balancer*.conf.template` - Configuración de balanceadores
+- `cache*.conf.template` - Configuración de caché
+- `circus_*.ini.template` - Configuración de Circus (supervisor)
+- `purge_varnish.*.template` - Scripts de purge de Varnish
+
+## 🚀 Proceso de Setup
+
+1. **Crear entorno virtual**: `python3.11 -m venv /path/to/venv`
+2. **Clonar repositorio**: `git clone https://github.com/UPCnet/genweb6.buildout`
+3. **Copiar plantillas**:
+   ```bash
+   cp customizeme.cfg.in customizeme.cfg
+   cp bootstrap.sh.in bootstrap.sh
+   ```
+4. **Configurar parámetros** en `customizeme.cfg`
+5. **Ejecutar bootstrap**: `./bootstrap.sh [python_path]`
+   - El bootstrap automáticamente ejecuta `pip install -r requirements.txt`
+   - Ejecuta `buildout -N -c organs.cfg` (dos veces para asegurar configuración completa)
+6. **Iniciar instancia**: `./bin/instance fg` o `./bin/instance start`
+
+## 📋 Requisitos del Entorno
+
+- **Python 3.11.1** - Versión específica requerida
+- **Entorno virtual** - Aislado para el proyecto
+- **Ruta del venv** - Configurable en bootstrap.sh o como argumento
+
+## 🏭 Configuraciones de Producción
+
+### Zope Only (zope-only.cfg)
+- Múltiples instancias Zope (zc1, zc2, zc3, zc4, zcdebug)
+- Configuración de filestorage distribuido
+- Supervisor para gestión de procesos
+- Backup automático
+- Purge de Varnish
+
+### ZEO Only (zeo-only.cfg)
+- Servidores ZEO (zeo1, zeo2)
+- Filestorage distribuido
+- Backup de ZEO
+- Supervisor para gestión
+
+## 💻 Desarrollo
+
+- `mr.developer` para gestión de repositorios
+- `always-checkout = false`
+- `auto-checkout` basado en developeggs
+- Bootstrap con Python 3.11.1
+- Configuración de entorno virtual personalizada
+
+## 📋 Configuración de Proyectos
+
+### projects.cfg
+```ini
+[genwebcore]
+eggs = genweb6.core
+       genweb6.theme
+       collective.recipe.filestorage
+       ftw.casauth
+
+[genwebupc]
+eggs = genweb6.upc
+
+[genwebaddons]
+eggs = genweb.organs
+
+[genwebmigration]
+eggs = collective.exportimport
+       contentimport
+```
+
+### Dependencias Específicas
+- **genweb6.core**: Core de Genweb 6
+- **genweb6.theme**: Tema de Genweb 6
+- **genweb6.upc**: Paquete específico UPC
+- **genweb.organs**: Funcionalidad de órganos
+- **collective.exportimport**: Migración de contenido
+- **contentimport**: Importación de contenido
+- **ftw.casauth**: Autenticación CAS
+- **collective.recipe.filestorage**: Filestorage distribuido
+
+## ⚙️ Configuración Principal
+
+### buildout.cfg
+```ini
+[buildout]
+extends =
+    versions.cfg
+    sources.cfg
+    projects.cfg
+    customizeme.cfg
+
+parts =
+    instance
+    zopepy
+    test
+    i18ndude
+    update_locale
+
+eggs =
+    Plone
+    genweb.organs
+    genweb6.core
+    genweb6.theme
+    contentimport
+    collective.exportimport
+```
+
+### versions.cfg
+```ini
+# Plone 6
+Plone = 6.0.11
+plone.app.contenttypes = 3.0.2
+plone.app.dexterity = 3.0.2
+
+# Migración
+collective.exportimport = 1.8
+contentimport = 1.0
+
+# Genweb
+genweb.organs = 1.0
+genweb6.core = 1.0
+genweb6.theme = 1.0
+```
+
+## 🚀 Comandos Útiles
+
+### Desarrollo
+```bash
+# Iniciar instancia (foreground)
+./bin/instance fg
+
+# Iniciar instancia (background)
+./bin/instance start
+
+# Shell interactivo
+./bin/zopepy
+
+# Tests
+./bin/test
+
+# Actualizar locales
+./bin/update_locale
+```
+
+### Migración
+
+1. **Exportar desde Plone 4**: Acceder a `http://plone4-site/@@export_content`
+2. **Importar en Plone 6**: Acceder a `http://plone6-site/@@import_content`
+
+
+## 📁 Paquetes en Desarrollo
+
+### sources.cfg
+```ini
+[sources]
+# genwebcore
+genweb6.core = git https://github.com/UPCnet/genweb6.core.git branch=master
+genweb6.theme = git https://github.com/UPCnet/genweb6.theme.git branch=master
+collective.recipe.filestorage = git https://github.com/UPCnet/collective.recipe.filestorage.git branch=main
+ftw.casauth = git https://github.com/UPCnet/ftw.casauth.git branch=master
+
+# genwebupc
+genweb6.upc = git https://github.com/UPCnet/genweb6.upc.git branch=master
+
+# genwebaddons
+genweb.organs = git https://github.com/UPCnet/genweb.organs.git branch=pyto3
+
+# genwebmigration
+collective.exportimport = git https://github.com/collective/collective.exportimport.git branch=main
+contentimport = git https://github.com/UPCnet/contentimport.git branch=main
+```
+
+### develop-eggs
+```ini
+# Paquetes en desarrollo local
+genweb.organs = src/genweb.organs
+genweb6.core = src/genweb6.core
+genweb6.theme = src/genweb6.theme
+contentimport = src/contentimport
+```
+
+## 🔧 Configuración de Instancia
+
+### instance.cfg
+```ini
+[instance]
+recipe = plone.recipe.zope2instance
+http-address = 11001
+user = admin:admin
+blob-storage = var/blobstorage
+effective-user = plone
+profile = on
+http-fast-listen = off
+asyncore-use-poll = on
+eggs =
+  Plone
+  Pillow
+  ${buildout:eggs}
+  ${buildout:developeggs}
+
+environment-vars =
+  PTS_LANGUAGES ca es en
+  zope_i18n_allowed_languages ca es en
+  zope_i18n_compile_mo_files true
+  ldapbindpasswd ${ldapconfig:bindpasswd}
+  PYTHONWARNINGS ignore
+  varnish_url ${deployment:varnish_url}
+  varnish_to_ban ${deployment:varnish_to_ban}
+  dorsal ${deployment:dorsal}
+  home_user ${custom:home_user}
+  home_pass ${custom:home_pass}
+  home_url ${custom:home_url}
+```
+
+### ZCML
+```ini
+# Configuración ZCML
+zcml =
+```
+
+### Filestorage Distribuido
+```ini
+[filestorage]
+# Para habilitar ZODB mount points en el buildout de desarrollo
+# para propósitos de testing y debug
+recipe = collective.recipe.filestorage
+parts = ${custom:parts}
+parts = 996 997 998 999
+
+location = var/filestorage/Data_%(fs_part_name)s.fs
+blob-storage = var/blobstorage/%(fs_part_name)s
+```
+
+### Site Packages
+```ini
+[site-packages]
+# Reproduce un árbol de directorios único de los paquetes Python instalados
+# Útil para buscar, navegar o explorar todo el código fuente de la aplicación
+recipe = collective.recipe.omelette
+eggs = ${instance:eggs}
+```
+
+## 🧪 Testing
+
+### test.cfg
+```ini
+[test]
+recipe = zc.recipe.testrunner
+defaults = ['--auto-color', '--auto-progress']
+eggs = ${buildout:eggs}
+```
+
+### Comandos de Test
+```bash
+# Tests unitarios
+bin/test -s genweb.organs
+
+# Tests con coverage
+bin/test --coverage
+
+# Tests específicos
+bin/test -t test_specific
+```
+
+## 🌐 Internacionalización
+
+### i18ndude.cfg
+```ini
+[i18ndude]
+recipe = i18ndude
+```
+
+### Comandos i18n
+```bash
+# Extraer strings
+bin/i18ndude rebuild-pot
+
+# Actualizar traducciones
+bin/update_locale
+
+# Compilar traducciones
+bin/i18ndude compile
+```
+
+## 📦 Dependencias
+
+### requirements.txt
+```
+# Plone 6
+Plone==6.0.11
+plone.app.contenttypes==3.0.2
+plone.app.dexterity==3.0.2
+
+# Migración
+collective.exportimport==1.8
+
+# Desarrollo
+ipdb==0.13.13
+pytest==7.4.3
+```
+
+### setup.py (paquetes)
+```python
+install_requires=[
+    'setuptools',
+    'Plone>=6.0',
+    'plone.app.dexterity',
+    'plone.app.contenttypes',
+    'collective.exportimport',
+],
+```
+
+## 🚨 Troubleshooting
+
+### Errores Comunes
+
+#### ImportError
+```bash
+# Limpiar buildout
+rm -rf parts/ eggs/ develop-eggs/
+./bootstrap.sh
+```
+
+#### ZCML Errors
+```bash
+# Verificar configuración ZCML
+bin/instance debug
+
+# Revisar logs
+tail -f var/log/instance.log
+```
+
+#### Memory Issues
+```bash
+# Aumentar memoria
+export ZOPE_OPTIONS="-Xmx2g"
+
+# O en buildout.cfg
+[instance]
+environment-vars =
+    ZOPE_OPTIONS -Xmx2g
+```
+
+## 📋 Checklist de Configuración
+
+- [ ] Versiones fijas en `versions.cfg`
+- [ ] Paquetes en desarrollo en `sources.cfg`
+- [ ] ZCML configurado correctamente
+- [ ] Tests funcionando
+- [ ] i18n configurado
+- [ ] Logs sin errores
+- [ ] Migración funcionando

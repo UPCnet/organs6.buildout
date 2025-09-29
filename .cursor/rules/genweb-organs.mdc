@@ -1,0 +1,165 @@
+---
+globs: src/genweb.organs/**/*
+description: Reglas específicas para el paquete genweb.organs
+---
+
+# 🏛️ Genweb.organs - Reglas Específicas
+
+## 📁 Estructura del Paquete
+
+```
+src/genweb.organs/
+├── src/genweb/organs/
+│   ├── content/           # Tipos de contenido
+│   │   ├── acta/         # Actas de sesiones
+│   │   ├── acord/        # Acuerdos
+│   │   ├── organ/        # Órganos
+│   │   ├── punt/         # Puntos de agenda
+│   │   ├── sessio/       # Sesiones
+│   │   └── subpunt/      # Subpuntos
+│   ├── browser/          # Vistas y templates
+│   ├── hooks.py          # Eventos y workflows
+│   └── utils.py          # Utilidades
+```
+
+## 🗂️ Tipos de Contenido
+
+### Sessio (Sesión)
+- **Campos clave**: `infoQuorums`, `horaInici`, `horaFi`
+- **Validaciones**: Campos requeridos, fechas válidas
+- **Métodos**: `checkHasQuorum()`, `showOpenQuorum()`
+
+### Acta
+- **DefaultFactory**: Leer del contexto padre para evitar recursión
+- **Campos**: `membres_convidats`, `membres_convocats`, `hora_inici`, `hora_fi`
+- **Dependencias**: IEventAccessor del contexto padre
+
+### Punt/Subpunt/Acord
+- **Campo crítico**: `estatsLlista` (schema.Choice con vocabulario)
+- **Vocabulario**: `llistaEstats` parsea HTML del órgano
+- **Valores**: Estados con/sin sufijos de color
+
+## 🔧 Patrones de Código
+
+### DefaultFactory Seguro
+```python
+def campo_default_factory(context):
+    """Evitar recursión leyendo del contexto padre."""
+    try:
+        parent = context.aq_parent
+        if hasattr(parent, 'campo'):
+            return parent.campo
+    except (AttributeError, TypeError):
+        pass
+    return RichTextValue('')  # Valor por defecto seguro
+```
+
+### Vocabularios Dinámicos
+```python
+def llistaEstats(context):
+    """Generar vocabulario desde HTML del órgano."""
+    organ = context.aq_parent
+    if not hasattr(organ, 'estatsLlista'):
+        return SimpleVocabulary([])
+
+    html = organ.estatsLlista.raw
+    # Parsear HTML y extraer estados
+    # Manejar sufijos de color
+    return SimpleVocabulary([SimpleTerm(value, value, value)])
+```
+
+### Manejo de Fechas
+```python
+def hora_default_factory(context):
+    """Obtener hora del contexto padre si es evento."""
+    try:
+        parent = context.aq_parent
+        event = IEventAccessor(parent)
+        return event.start
+    except TypeError:
+        return None
+```
+
+## 🎯 Validaciones Específicas
+
+### infoQuorums
+- **Tipo**: Dict con claves enteras
+- **Acceso**: `infoQuorums[1]['end']` (clave entera)
+- **Migración**: Mantener claves como enteros
+
+### estatsLlista
+- **Tipo**: Choice con vocabulario restringido
+- **Valores**: Estados válidos del órgano
+- **Migración**: Mapear valores legacy a vocabulario actual
+
+### Campos RichText
+- **Acceso**: `.output` para renderizado
+- **Comparación**: Usar `hasattr(obj, 'output')`
+- **Default**: `RichTextValue('')` para valores vacíos
+
+## 🧪 Testing
+
+### Tests Unitarios
+```python
+def test_default_factory_no_recursion(self):
+    """Verificar que defaultFactory no cause recursión."""
+    acta = create_content('genweb.organs.acta')
+    # Verificar que no falla al acceder al campo
+    self.assertIsNotNone(acta.membres_convidats)
+```
+
+### Tests de Migración
+```python
+def test_infoQuorums_migration(self):
+    """Verificar migración de infoQuorums."""
+    # Simular datos de Plone 4
+    # Verificar que se normalizan correctamente
+```
+
+## 🚨 Errores Comunes
+
+### Recursión en DefaultFactory
+- **Síntoma**: `RecursionError: maximum recursion depth exceeded`
+- **Causa**: DefaultFactory accede al mismo campo
+- **Solución**: Leer del contexto padre
+
+### TypeError en RichTextValue
+- **Síntoma**: `unhashable type: 'RichTextValue'`
+- **Causa**: Acceso directo sin `.output`
+- **Solución**: Verificar `hasattr(obj, 'output')`
+
+### ValidationError en estatsLlista
+- **Síntoma**: `Constraint not satisfied`
+- **Causa**: Valor no está en vocabulario
+- **Solución**: Revisar función `llistaEstats`
+
+## 📝 Convenciones
+
+### Naming
+- **Tipos**: `genweb.organs.tipo`
+- **Interfaces**: `ITipo`
+- **Vistas**: `TipoView`
+- **Templates**: `tipo.pt`
+
+### Imports
+```python
+from genweb.organs.content.sessio import ISessio
+from genweb.organs.content.acta import IActa
+from genweb.organs.content.punt import IPunt
+```
+
+### Docstrings
+```python
+def metodo(self, param):
+    """Descripción del método.
+
+    Args:
+        param: Descripción del parámetro
+
+    Returns:
+        Descripción del retorno
+
+    Raises:
+        ValidationError: Cuando el parámetro es inválido
+    """
+```
