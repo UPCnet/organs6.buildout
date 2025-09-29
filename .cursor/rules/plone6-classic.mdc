@@ -1,0 +1,181 @@
+alwaysApply: true
+---
+# 🌟 Cursor Rules – Plone 6 Classic 🌟
+
+# ================================
+# 📦 Estructura de Paquetes
+# ================================
+
+## Paquete `core` (funcional)
+src/
+└── my.package.core/
+    ├── __init__.py
+    ├── config/ 🔧
+    ├── browser/
+    │   ├── templates/ 📝
+    │   └── ...
+    ├── content/ 🗂
+    ├── patches/ ⚠️
+    ├── profiles/
+    │   ├── default/ ✅
+    │   │   ├── metadata.xml
+    │   │   ├── types.xml
+    │   │   ├── registry.xml
+    │   │   ├── catalog.xml
+    │   │   └── ...
+    │   └── uninstall/ ♻️
+    ├── locales/ 🌐
+    ├── tests/
+    │   ├── unit/ 🧪
+    │   ├── integration/ 🔗
+    │   └── functional/ ⚙️
+    ├── configure.zcml
+    ├── overrides.zcml
+    ├── patches.zcml
+    └── version.txt 📌
+
+## Paquete `theme` (presentación)
+src/
+└── my.package.theme/
+    ├── __init__.py
+    ├── browser/
+    │   ├── templates/ 📝
+    │   └── ...
+    ├── profiles/
+    │   └── default/
+    │       ├── metadata.xml
+    │       └── theme/
+    │           ├── rules.xml 📜
+    │           └── manifest.cfg
+    ├── resources/ 🖌
+    │   ├── css/
+    │   ├── js/
+    │   ├── images/
+    │   └── ...
+    ├── static/ 📂
+    ├── locales/ 🌐
+    ├── theme.zip
+    ├── configure.zcml
+    ├── viewlets.zcml
+    └── version.txt 📌
+
+# ================================
+# 🖋 Convenciones de Código
+# ================================
+
+- `snake_case` para funciones/variables, `CamelCase` para clases 🐍
+- PEP 8 📏
+- Docstrings con estilo Google o NumPy 📖
+- Constantes en `config/`
+- Evitar `import *`, usar importaciones explícitas 🔍
+- Añadir `type hints` siempre
+- Evitar estado global o mutable ⚠️
+
+# ================================
+# ⚙️ Archivos de Configuración
+# ================================
+
+- Declarar componentes en `configure.zcml`
+- Usar `profiles/default/` y `profiles/uninstall/`
+- XML: `types.xml`, `registry.xml`, `rolemap.xml`, `catalog.xml`
+- Registrar bundles JS/CSS en `registry.xml`
+
+# ================================
+# 🧩 Sobreescrituras y Monkey Patches
+# ================================
+
+- `overrides.zcml` para sobreescrituras
+- `patches.zcml` + carpeta `patches/` para monkey patches ⚠️
+- Documentar propósito, alcance y riesgo de cada patch
+- Preferir adaptadores o subscribers
+- Evitar tocar core crítico de Plone 🔐
+
+# ================================
+# 🖼 Plantillas
+# ================================
+
+- Guardar en `templates/`
+- TAL/ZPT, evitar lógica compleja
+- Compatible con `viewlets` y `portlets`
+- Separar presentación de lógica de negocio
+
+# ================================
+# 🌐 Recursos Estáticos
+# ================================
+
+- `resources/` → assets gestionados por `plone.staticresources`
+- `static/` → archivos no gestionados dinámicamente
+- JS compatible Mockup / PatternsLib
+- Registrar bundles en `registry.xml`
+- Diferenciar recursos core vs theme
+
+# ================================
+# 🐍 Principios de Desarrollo Python
+# ================================
+
+- Funciones puras (`def`) sobre clases si no hay estado
+- Patrón RORO: recibe objeto → devuelve objeto
+- Modularidad y DRY
+- Early return > if/else anidado
+- Evitar estado global
+- Docstrings + type hints
+- Manejar errores explícitamente
+
+# ================================
+# 🧠 Caché
+# ================================
+
+- Evitar `@ram.cache` con múltiples ZC ⚠️
+- Alternativa: pasar `request` y gestionar invalidaciones con frontend/eventos
+- Ejemplo: <https://github.com/UPCnet/genweb6.serveistic/commit/aa40ec2960bae6863057c4f070190aa4cc842be6>
+- `plone.memoize`: usar con precaución y scope correcto (`request` vs `instance`)
+
+# ================================
+# 🧪 Pruebas
+# ================================
+
+- `unittest` o `pytest` con `plone.testing`
+- Agrupar por funcionalidad
+- Carpetas: `tests/unit/`, `tests/integration/`, `tests/functional/`
+- `@layer` para aislar tests funcionales, integración, etc.
+
+# ================================
+# 📚 Documentación
+# ================================
+
+- Guardar en `docs/` o `README.rst`
+- Incluir instalación, desarrollo, tests
+- Explicar dependencias y estructura del paquete
+
+# ================================
+# 🔗 Dependencias
+# ================================
+
+- Declarar en `setup.py` (`install_requires`, `extras_require`)
+- Compatibilidad con Plone objetivo
+- `constraints.txt` opcional para CI/CD
+
+# ================================
+# 📝 Versiones
+# ================================
+
+- `version.txt` formato `X.Y.Z`
+- Alinear versión con core/theme/dependencies
+
+# ================================
+# 📜 Licencias
+# ================================
+
+- Incluir `LICENSE`
+- Declarar en `setup.py`
+
+# ================================
+# 💡 Buenas Prácticas Plone
+# ================================
+
+- Documentación oficial: <https://6.docs.plone.org/>
+- Plone Training: <https://training.plone.org/>
+- Separar core vs theme
+- Usar perfiles de instalación/desinstalación
+- Evitar manipulación directa de contenido; usar API/adaptadores
+- Seguir naming conventions de tipos y behaviors

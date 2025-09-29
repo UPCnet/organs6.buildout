@@ -1,0 +1,149 @@
+---
+globs: *.py
+alwaysApply: false
+---
+# Cursor Rules: Migración Python 2.7 → Python 3.11
+
+## 1️⃣ Sintaxis básica
+- Reemplaza `print` como instrucción por `print()` como función.
+- Sustituye `xrange()` por `range()`.
+- Sustituye `dict.iteritems()` / `iteritems()` → `items()`; `iterkeys()` → `keys()`; `itervalues()` → `values()`.
+- Cambia `basestring` por `str`.
+- Sustituye `unicode` por `str`; usa `bytes` cuando necesites datos binarios.
+- Quita `long`; en Python 3 todo es `int`.
+- Usa `from __future__ import annotations` si quieres tipado diferido (opcional, recomendado en 3.11).
+
+## 2️⃣ Manejo de cadenas y bytes
+- Revisa todo lo que antes mezclaba `str` y `unicode`; en Python 3 `str` siempre es Unicode.
+- Usa `b"..."` para literales de bytes.
+- Cuando leas/escribas archivos, abre con `encoding="utf-8"` y modo binario/texto según corresponda.
+- Sustituye `StringIO` de `StringIO` por:
+  - `io.StringIO` para texto.
+  - `io.BytesIO` para binarios.
+
+## 3️⃣ Librerías estándar
+- Revisa imports obsoletos:
+  - `ConfigParser` → `configparser`
+  - `Queue` → `queue`
+  - `SocketServer` → `socketserver`
+  - `urlparse`, `urllib`, `urllib2` → `urllib.parse`, `urllib.request`
+  - `cPickle` → `pickle`
+  - `UserDict` → `collections.UserDict`
+  - `UserList` → `collections.UserList`
+  - `UserString` → `collections.UserString`
+- Sustituye `__cmp__` por métodos ricos (`__lt__`, `__eq__`, etc.).
+- `reduce()` ahora está en `functools.reduce()`.
+- `execfile()` → `exec(open(filename).read())`.
+
+## 4️⃣ Excepciones
+- Usa `except Exception as e:` en lugar de `except Exception, e:`.
+- Aprovecha `raise ... from ...` para preservar trazas.
+- `StandardError` → `Exception`.
+- `exec` y `eval` ahora son funciones, no declaraciones.
+
+## 5️⃣ Compatibilidad y herramientas
+- Antes de migrar, ejecuta `python2 -m pip install future six` si necesitas soporte mixto temporal.
+- Usa `2to3` para refactor inicial automático, pero revisa manualmente después.
+- Considera `modernize` o `futurize` si necesitas mantener compatibilidad con Py2 (aunque lo ideal es migrar del todo).
+- Añade `from __future__ import print_function, unicode_literals` en los módulos que sigan en Py2 durante la transición.
+
+## 6️⃣ Tipado y estilo
+- Añade anotaciones de tipo (`def foo(x: int) -> str:`) para beneficiarte del chequeo estático en 3.11.
+- Usa f-strings (`f"{var}"`) en vez de `%` o `.format()`.
+- Sustituye `__nonzero__` por `__bool__`.
+- `raw_input()` → `input()`.
+- `file()` → `open()`.
+- Los enteros no tienen límite de tamaño en Python 3.
+
+## 7️⃣ Testing y CI
+- Asegúrate de que tus tests se ejecuten con `pytest` o `unittest` bajo Python 3.11.
+- Configura tu pipeline para probar con la nueva versión.
+- Si usas Plone/Zope, revisa que tus add-ons soporten 3.11 antes de actualizar.
+
+## 8️⃣ Específico para Plone/Zope
+- `Products.CMFCore.utils.getToolByName()` sigue funcionando, pero considera usar `api.portal.get_tool()`.
+- `getattr(aq_base, 'attribute', default)` para acceder a atributos sin acquisition.
+- `IAnnotations(context)` para annotations sigue igual.
+- `DateTime` de Zope sigue funcionando igual.
+- Revisa `__import__()` y `importlib` para imports dinámicos.
+- `zope.interface.implements()` → `@implementer` decorator.
+
+## 9️⃣ Buenas prácticas finales
+- Ejecuta `python -m compileall` para detectar sintaxis incompatible.
+- Haz búsquedas globales en tu proyecto con patrones como:
+  - `except [^a-z]*,`
+  - `print [^(
+]`
+  - `xrange`
+  - `unicode`
+  - `basestring`
+  - `iteritems`
+  - `itervalues`
+  - `iterkeys`
+- Revisa dependencias externas y actualízalas (`pip install --upgrade ...`).
+- Si tienes C-extensions, recompílalas para 3.11.
+- Usa `isinstance(obj, str)` en lugar de `isinstance(obj, basestring)`.
+
+## 🔟 Casos típicos olvidados
+
+### Metaclases
+
+**Python 2:**
+```python
+class Foo:
+    __metaclass__ = Meta
+```
+
+**Python 3:**
+```python
+class Foo(metaclass=Meta):
+    pass
+```
+
+### Comparaciones mixtas
+
+Py2 permitía `1 < "2"` o `None < 1`; en Py3 lanzan `TypeError`.
+
+Revisa código que compare tipos distintos.
+
+### División
+
+**Py2:** `1/2 == 0`
+**Py3:** `1/2 == 0.5`
+
+Para división entera, usa `//`.
+
+### Diccionarios
+
+`d.has_key("k")` → `"k" in d`
+
+### Iteradores
+
+`iterator.next()` → `next(iterator)`
+
+### Builtins eliminados
+
+`apply()`, `buffer()`, `coerce()`, `intern()` ya no existen.
+
+Busca y elimina o reescribe su lógica.
+
+### Imports relativos
+
+Py2 aceptaba imports implícitos.
+
+En Py3 usa siempre explícitos: `from . import module`
+
+### 🚀 Flujo sugerido con Cursor
+1. **Crea un branch** `migrate-py3`.
+2. Abre un archivo en Cursor, activa las rules y pide: "Aplicar migración Python 3 a este archivo".
+3. Corre tus tests en Py3 después de cada grupo de cambios.
+4. Cuando todo pase en 3.11, elimina código de compatibilidad (`six`, `future`).
+
+### 🔍 Comandos útiles para búsquedas
+```bash
+# Buscar patrones problemáticos
+grep -r "xrange\|unicode\|basestring\|iteritems\|itervalues\|iterkeys" src/
+grep -r "except.*," src/
+grep -r "print [^(]" src/
+grep -r "raw_input\|file(" src/
+```
