@@ -1,0 +1,467 @@
+# 🔄 Migración de Tests de Plone 4 a Plone 6
+
+Guía completa para migrar tests funcionales complejos de Plone 4 (Python 2) a Plone 6 (Python 3).
+
+## 📋 Checklist de Migración
+
+Cuando migres tests grandes de Plone 4 a Plone 6, sigue estos pasos en orden:
+
+### 1️⃣ Preparación
+- [ ] Hacer backup del archivo original de Plone 4
+- [ ] Verificar que los tests pasan en Plone 4 original
+- [ ] Identificar cuántas transformaciones se necesitan
+
+### 2️⃣ Transformaciones Básicas (seguras)
+- [ ] Eliminar `from zope.publisher.browser import TestRequest`
+- [ ] Reemplazar `request = TestRequest()` → `request = self.request`
+- [ ] Convertir `print "..."` → `print("...")`
+- [ ] Corregir `except:` → `except Exception:`
+- [ ] Añadir supresión de warnings en `setUp()`
+
+### 3️⃣ Transformaciones de assertRaises (críticas)
+- [ ] Convertir `self.assertRaises(Unauthorized, call)` → context manager
+- [ ] Verificar que todas las conversiones usen `()`  al final
+- [ ] Mantener la indentación correcta
+
+### 4️⃣ Verificación
+- [ ] Ejecutar tests para identificar fallos
+- [ ] Comparar expectativas con código original de Plone 4
+- [ ] Corregir conversiones selectivas si es necesario
+
+## ⚠️ Conversión de assertRaises: Errores Comunes
+
+### ❌ Error 1: No usar context manager en Plone 6
+
+**Plone 4 (inline - ya no funciona en Plone 6):**
+```python
+self.assertRaises(Unauthorized, DisplayFile(...).publishTraverse(...))
+```
+
+**Plone 6 (context manager - obligatorio):**
+```python
+with self.assertRaises(Unauthorized):
+    DisplayFile(...).publishTraverse(...)()  # ⚠️ Nota el () al final
+```
+
+### ❌ Error 2: Olvidar el `()` al final
+
+```python
+# ❌ MAL: Falta () al final
+with self.assertRaises(Unauthorized):
+    DisplayFile(obj, request).publishTraverse(request, 'field')
+
+# ✅ BIEN: Con () al final para ejecutar
+with self.assertRaises(Unauthorized):
+    DisplayFile(obj, request).publishTraverse(request, 'field')()
+```
+
+### ❌ Error 3: Indentación incorrecta
+
+```python
+# ❌ MAL: Sin indentación dentro del with
+with self.assertRaises(Unauthorized):
+DisplayFile(...).publishTraverse(...)()
+
+# ✅ BIEN: Con indentación correcta
+with self.assertRaises(Unauthorized):
+    DisplayFile(...).publishTraverse(...)()
+```
+
+## 🐍 Scripts Python para Conversión Masiva
+
+Para archivos grandes (>1000 líneas) con muchas conversiones repetitivas:
+
+### Script 1: Conversión Básica (Python 2 → 3)
+
+```python
+import re
+
+file_path = "path/to/test_file.py"
+
+with open(file_path, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+# 1. Eliminar import de TestRequest
+content = content.replace('from zope.publisher.browser import TestRequest\n', '')
+
+# 2. Reemplazar uso de TestRequest
+content = content.replace('request = TestRequest()', 'request = self.request')
+
+# 3. Convertir print statements
+content = re.sub(r'(\s+)print "([^"]*)"', r'\1print("\2")', content)
+
+# 4. Corregir except:
+content = content.replace('        except:\n            pass',
+                         '        except Exception:\n            pass')
+
+# 5. Añadir warnings en setUp
+old_setup = '''    def setUp(self):
+        self.app = self.layer['app']
+        self.portal = self.layer['portal']
+        self.request = self.layer['request']'''
+
+new_setup = '''    def setUp(self):
+        import warnings
+        warnings.filterwarnings("ignore", category=ResourceWarning,
+                                message=".*unclosed file.*")
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+        self.app = self.layer['app']
+        self.portal = self.layer['portal']
+        self.request = self.layer['request']'''
+
+content = content.replace(old_setup, new_setup)
+
+with open(file_path, 'w', encoding='utf-8') as f:
+    f.write(content)
+
+print("✓ Transformaciones básicas completadas")
+```
+
+### Script 2: Conversión de assertRaises (inline → context manager)
+
+```python
+import re
+
+file_path = "path/to/test_file.py"
+
+with open(file_path, 'r', encoding='utf-8') as f:
+    lines = f.readlines()
+
+new_lines = []
+i = 0
+
+while i < len(lines):
+    line = lines[i]
+
+    # Buscar assertRaises inline (una sola línea completa)
+    if ('self.assertRaises(Unauthorized,' in line and
+        line.strip().startswith('self.assertRaises') and
+        line.count('(') == line.count(')')):
+
+        match = re.search(r'(\s+)self\.assertRaises\(Unauthorized,\s+(.+)\)', line)
+        if match:
+            indent = match.group(1)
+            call = match.group(2).strip()
+
+            # Crear context manager
+            new_lines.append(f'{indent}with self.assertRaises(Unauthorized):\n')
+            new_lines.append(f'{indent}    {call}()\n')
+            i += 1
+            continue
+
+    new_lines.append(line)
+    i += 1
+
+with open(file_path, 'w', encoding='utf-8') as f:
+    f.writelines(new_lines)
+
+print("✓ assertRaises convertidos a context manager")
+```
+
+### Script 3: Conversiones Selectivas (basadas en contexto)
+
+Para casos donde solo algunos `assertRaises` deben convertirse a `assertTrue`:
+
+```python
+file_path = "path/to/test_file.py"
+
+with open(file_path, 'r', encoding='utf-8') as f:
+    lines = f.readlines()
+
+# Variables para rastrear contexto
+in_target_test = False
+current_estado = None
+new_lines = []
+i = 0
+
+while i < len(lines):
+    line = lines[i]
+
+    # Detectar inicio de test específico
+    if 'def test_specific_case(self):' in line:
+        in_target_test = True
+        current_estado = None
+    elif 'def test_' in line and 'test_specific_case' not in line:
+        in_target_test = False
+        current_estado = None
+
+    # Detectar estado por prints
+    if in_target_test and 'ESTADO_X' in line:
+        current_estado = 'ESTADO_X'
+    elif in_target_test and 'ESTADO_Y' in line:
+        current_estado = 'ESTADO_Y'
+
+    # Convertir solo en test y estado específicos
+    if (in_target_test and
+        current_estado == 'ESTADO_X' and
+        'with self.assertRaises(Unauthorized):' in line):
+
+        # Siguiente línea tiene la llamada
+        if i + 1 < len(lines):
+            next_line = lines[i + 1]
+            call = next_line.strip()
+            indent = len(line) - len(line.lstrip())
+
+            # Convertir a assertTrue
+            new_lines.append(' ' * indent + f'self.assertTrue({call})\n')
+            i += 2  # Saltar ambas líneas
+            continue
+
+    new_lines.append(line)
+    i += 1
+
+with open(file_path, 'w', encoding='utf-8') as f:
+    f.writelines(new_lines)
+
+print("✓ Conversiones selectivas completadas")
+```
+
+## 🔍 Verificación de Expectativas
+
+Cuando los tests fallan después de migrar:
+
+### 1. Comparar con código original de Plone 4
+
+```bash
+# Ver el código de permisos original
+grep -A 20 "restricted_to_members" \
+  genweb.organs.old/genweb/organs/namedfilebrowser.py
+
+# Ver el test original
+grep -A 10 "should_view_as_afectat" \
+  genweb.organs.old/genweb/organs/tests/test_file.py
+```
+
+### 2. Verificar que las expectativas son correctas
+
+```python
+# ❌ MAL: Test espera acceso pero código original deniega
+def should_view_as_afectat(self):
+    # En test migrado (INCORRECTO):
+    self.assertTrue(DisplayFile(...).publishTraverse(...)())
+
+    # En código original Plone 4:
+    # elif 'OG4-Afectat' in roles:
+    #     raise Unauthorized  # ← Deniega acceso
+
+# ✅ BIEN: Test debe reflejar el código original
+def should_view_as_afectat(self):
+    with self.assertRaises(Unauthorized):
+        DisplayFile(...).publishTraverse(...)()
+```
+
+### 3. Documentar discrepancias encontradas
+
+```python
+def should_view_as_afectat(self):
+    """Test restricciones de OG4-Afectat.
+
+    IMPORTANTE: En Plone 4 original, los Afectats NO podían
+    ver archivos en órganos restricted_to_members.
+    El test anterior fue modificado incorrectamente.
+    """
+    with self.assertRaises(Unauthorized):
+        DisplayFile(...).publishTraverse(...)()
+```
+
+## ⚡ Estrategia de Migración Incremental
+
+Para tests muy grandes (>3000 líneas):
+
+### Paso 1: Aplicar transformaciones básicas
+
+```bash
+# Crear copia
+cp test_file.py test_file_migrated.py
+
+# Aplicar Script 1 (transformaciones básicas)
+python3 script_basic_transform.py
+
+# Verificar sintaxis
+python3 -m py_compile test_file_migrated.py
+```
+
+### Paso 2: Convertir assertRaises en lotes
+
+```bash
+# Aplicar Script 2 (assertRaises)
+python3 script_convert_assertraises.py
+
+# Ejecutar tests para ver qué falla
+./bin/test -s package -t test_file_migrated
+```
+
+### Paso 3: Corregir conversiones específicas
+
+```bash
+# Identificar qué tests fallan
+./bin/test -s package -t test_file_migrated 2>&1 | grep "FAIL\|ERROR"
+
+# Aplicar Script 3 solo a secciones problemáticas
+python3 script_selective_convert.py
+
+# Verificar de nuevo
+./bin/test -s package -t test_file_migrated
+```
+
+## 🚨 Errores Críticos a Evitar
+
+### 1. Corrupción de archivo por scripts mal diseñados
+
+```python
+# ❌ PELIGRO: join sin '\n' puede juntar todo en una línea
+content = ''.join(new_lines)  # Si new_lines no tiene '\n', todo queda junto
+
+# ✅ SEGURO: Usar writelines con '\n' incluido
+with open(file_path, 'w') as f:
+    f.writelines(new_lines)  # Cada línea debe terminar en '\n'
+```
+
+**Solución si se corrompe:**
+```bash
+# Restaurar desde backup
+cp test_file_original.py test_file.py
+
+# O desde git
+git checkout -- test_file.py
+```
+
+### 2. Conversiones que rompen la sintaxis
+
+```python
+# ❌ Puede crear syntax error
+new_lines.append(indent + 'self.assertTrue(' + call + ')')  # Falta '\n'
+
+# ✅ Incluir siempre el salto de línea
+new_lines.append(indent + 'self.assertTrue(' + call + ')\n')
+```
+
+### 3. No verificar después de cada transformación
+
+```bash
+# ❌ Aplicar múltiples scripts sin verificar
+python3 script1.py && python3 script2.py && python3 script3.py
+
+# ✅ Verificar después de cada paso
+python3 script1.py
+./bin/test -s package -t test_file  # Verificar
+python3 script2.py
+./bin/test -s package -t test_file  # Verificar de nuevo
+```
+
+## 📊 Resumen: Orden de Prioridad
+
+1. **Primero**: Transformaciones básicas (seguras, pocas chances de error)
+2. **Segundo**: Conversión masiva de assertRaises (puede requerir ajustes)
+3. **Tercero**: Conversiones selectivas (requiere análisis del código)
+4. **Cuarto**: Verificación contra código original (asegurar expectativas correctas)
+5. **Último**: Optimizaciones y mejoras (prints, refactoring)
+
+## 🎯 Indicadores de Éxito
+
+- ✅ Todos los tests pasan sin modificar código de aplicación
+- ✅ No hay syntax errors ni import errors
+- ✅ Las expectativas coinciden con el código original de Plone 4
+- ✅ Los prints informativos funcionan correctamente
+- ✅ No hay warnings molestos durante ejecución
+
+## 📚 Transformaciones Comunes de Python 2 a 3
+
+### Strings y Unicode
+
+```python
+# Python 2
+u"texto unicode"
+"texto string"
+
+# Python 3
+"texto unicode"  # Todo es unicode por defecto
+b"texto bytes"   # Para datos binarios
+```
+
+### Imports reorganizados
+
+```python
+# Python 2
+from zope.publisher.browser import TestRequest
+import ConfigParser
+
+# Python 3
+# TestRequest no se usa, usar self.request del layer
+import configparser
+```
+
+### Division
+
+```python
+# Python 2
+5 / 2  # = 2 (división entera)
+
+# Python 3
+5 / 2   # = 2.5 (división float)
+5 // 2  # = 2 (división entera explícita)
+```
+
+### Iteradores
+
+```python
+# Python 2
+dict.iteritems()
+dict.iterkeys()
+dict.itervalues()
+xrange(10)
+
+# Python 3
+dict.items()
+dict.keys()
+dict.values()
+range(10)
+```
+
+## 🔗 Referencias
+
+- Ver también: `@plone6-testing.mdc` para reglas generales de testing en Plone 6
+- Documentación oficial: https://6.docs.plone.org/
+- Python 2 to 3 guide: https://docs.python.org/3/howto/pyporting.html
+
+## 💡 Tips Finales
+
+1. **Trabaja en ramas git separadas** para cada archivo de test que migres
+2. **Haz commits frecuentes** después de cada transformación exitosa
+3. **Documenta cambios no obvios** en mensajes de commit
+4. **Comparte scripts** reutilizables con el equipo
+5. **Prueba en entorno aislado** antes de hacer push
+
+## 🐛 Debugging de Tests que Fallan
+
+### Error: "Unauthorized not raised"
+
+```python
+# Probable causa: olvidaste el () al final
+with self.assertRaises(Unauthorized):
+    view.publishTraverse(request, 'field')  # ❌ Sin ()
+
+# Solución:
+with self.assertRaises(Unauthorized):
+    view.publishTraverse(request, 'field')()  # ✅ Con ()
+```
+
+### Error: "IndentationError"
+
+```python
+# Probable causa: indentación incorrecta en el script
+# Verificar que el script mantenga espacios/tabs originales
+indent = len(line) - len(line.lstrip())
+new_lines.append(' ' * indent + '...')  # Reproducir indentación exacta
+```
+
+### Error: Test pasa pero expectativa es incorrecta
+
+```bash
+# Comparar con test original de Plone 4
+diff test_file_plone4.py test_file_plone6.py
+
+# Revisar código de aplicación original
+grep -A 10 "def function_name" original_code.py
+```

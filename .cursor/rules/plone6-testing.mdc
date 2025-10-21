@@ -1,0 +1,1684 @@
+# 🧪 Testing en Plone 6 - Reglas y Buenas Prácticas
+
+## 📦 Estructura de Tests
+
+```
+src/my.package/
+└── src/my/package/
+    ├── tests/
+    │   ├── __init__.py
+    │   ├── base.py                    # Layers y fixtures
+    │   ├── conftest.py                # Configuración pytest (opcional)
+    │   ├── unit/                      # Tests unitarios / Unit tests
+    │   │   ├── __init__.py
+    │   │   ├── test_utils.py
+    │   │   └── test_validators.py
+    │   ├── integration/               # Tests de integración / Integration tests
+    │   │   ├── __init__.py
+    │   │   ├── test_content_types.py
+    │   │   ├── test_behaviors.py
+    │   │   └── test_vocabularies.py
+    │   └── functional/                # Tests funcionales / Functional tests
+    │       ├── __init__.py
+    │       ├── test_views.py
+    │       ├── test_workflows.py
+    │       └── test_permissions.py
+    └── testing.py                     # Definición de layers / Layers definition
+```
+
+## 🚀 Referencia Rápida
+
+| Tipo de Test | Layer | Velocidad | Cuándo usar |
+|-------------|-------|-----------|-------------|
+| **Unitario** | Ninguno | ⚡ Muy rápido | Funciones puras, validadores, utils |
+| **Integración** | `INTEGRATION_TESTING` | 🐢 Medio | Content types, behaviors, catalog |
+| **Funcional** | `FUNCTIONAL_TESTING` | 🐌 Lento | Vistas, formularios, requests HTTP |
+| **Permisos** | `INTEGRATION_TESTING` | 🐢 Medio | Roles, seguridad, Unauthorized |
+| **Workflow** | `INTEGRATION_TESTING` | 🐢 Medio | Transiciones, estados |
+
+### Comandos útiles
+
+```bash
+# Ejecutar todos los tests
+./bin/test -s my.package
+
+# Solo tests de un archivo
+./bin/test -s my.package -t test_content_types
+
+# Solo tests unitarios
+./bin/test -s my.package.tests.unit
+
+# Solo tests de integración
+./bin/test -s my.package.tests.integration
+
+# Con coverage
+./bin/test -s my.package --coverage
+
+# Coverage con HTML
+./bin/test -s my.package --coverage --coverage-dir=htmlcov
+
+# Verbose (detallado)
+./bin/test -s my.package -vvv
+
+# Con debugger en errores
+./bin/test -s my.package -D
+
+# Con ipdb
+./bin/test -s my.package --ipdb
+```
+
+## 🏗️ Testing Layers (Capas)
+
+### Definición en testing.py
+```python
+from plone.app.contenttypes.testing import PLONE_APP_CONTENTTYPES_FIXTURE
+from plone.app.robotframework.testing import REMOTE_LIBRARY_BUNDLE_FIXTURE
+from plone.app.testing import (
+    FunctionalTesting,
+    IntegrationTesting,
+    PloneSandboxLayer,
+    applyProfile,
+)
+from plone.testing import z2
+import my.package
+
+
+class MyPackageLayer(PloneSandboxLayer):
+    """Layer base para my.package"""
+
+    defaultBases = (PLONE_APP_CONTENTTYPES_FIXTURE,)
+
+    def setUpZope(self, app, configurationContext):
+        """Configurar productos Zope"""
+        # Load ZCML
+        self.loadZCML(package=my.package)
+
+    def setUpPloneSite(self, portal):
+        """Configurar sitio Plone"""
+        # Instalar productos
+        applyProfile(portal, 'my.package:default')
+
+
+# Fixtures
+MY_PACKAGE_FIXTURE = MyPackageLayer()
+
+MY_PACKAGE_INTEGRATION_TESTING = IntegrationTesting(
+    bases=(MY_PACKAGE_FIXTURE,),
+    name='MyPackageLayer:IntegrationTesting',
+)
+
+MY_PACKAGE_FUNCTIONAL_TESTING = FunctionalTesting(
+    bases=(MY_PACKAGE_FIXTURE,),
+    name='MyPackageLayer:FunctionalTesting',
+)
+
+MY_PACKAGE_ACCEPTANCE_TESTING = FunctionalTesting(
+    bases=(
+        MY_PACKAGE_FIXTURE,
+        REMOTE_LIBRARY_BUNDLE_FIXTURE,
+        z2.ZSERVER_FIXTURE,
+    ),
+    name='MyPackageLayer:AcceptanceTesting',
+)
+```
+
+## 🧪 Tests Unitarios
+
+### Características
+- No requieren Plone site
+- Rápidos y aislados
+- Testean funciones y clases puras
+- Sin acceso a portal, catalog, etc.
+
+### Ejemplo
+```python
+import unittest
+from my.package.utils import normalize_data
+
+
+class TestUtils(unittest.TestCase):
+    """Tests unitarios para utilidades"""
+
+    def test_normalize_data_empty(self):
+        """Test normalización de datos vacíos"""
+        result = normalize_data({})
+        self.assertEqual(result, {})
+
+    def test_normalize_data_with_values(self):
+        """Test normalización con valores"""
+        data = {'key': 'value', 'nested': {'inner': 'data'}}
+        result = normalize_data(data)
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result['key'], 'value')
+
+    def test_normalize_data_invalid(self):
+        """Test normalización con datos inválidos"""
+        with self.assertRaises(TypeError):
+            normalize_data(None)
+```
+
+## 🔗 Tests de Integración
+
+### Características
+- Requieren layer con Plone site
+- Acceso a portal, catalog, tipos de contenido
+- Sin transacciones HTTP
+- Más lentos que unitarios
+
+### Ejemplo: Content Type
+```python
+import unittest
+from plone import api
+from plone.app.testing import setRoles, TEST_USER_ID
+from my.package.testing import MY_PACKAGE_INTEGRATION_TESTING
+
+
+class TestMyContentType(unittest.TestCase):
+    """Tests de integración para tipo de contenido personalizado"""
+
+    layer = MY_PACKAGE_INTEGRATION_TESTING
+
+    def setUp(self):
+        """Configuración inicial"""
+        self.portal = self.layer['portal']
+        self.request = self.layer['request']
+        setRoles(self.portal, TEST_USER_ID, ['Manager'])
+
+    def test_content_type_creation(self):
+        """Test creación de tipo de contenido"""
+        content = api.content.create(
+            container=self.portal,
+            type='MyContentType',
+            id='mycontent1',
+            title='Test Content',
+        )
+        self.assertEqual(content.portal_type, 'MyContentType')
+        self.assertEqual(content.title, 'Test Content')
+
+    def test_content_type_fields(self):
+        """Test campos del tipo de contenido"""
+        content = api.content.create(
+            container=self.portal,
+            type='MyContentType',
+            id='mycontent1',
+            title='Test Content',
+        )
+        # Verificar campos específicos
+        self.assertTrue(hasattr(content, 'custom_field'))
+
+    def test_content_type_in_catalog(self):
+        """Test indexación en catálogo"""
+        content = api.content.create(
+            container=self.portal,
+            type='MyContentType',
+            id='mycontent1',
+            title='Test Content',
+        )
+        results = api.content.find(portal_type='MyContentType')
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].Title, 'Test Content')
+```
+
+### Ejemplo: Behavior
+```python
+import unittest
+from plone import api
+from plone.app.testing import setRoles, TEST_USER_ID
+from my.package.testing import MY_PACKAGE_INTEGRATION_TESTING
+from my.package.behaviors import IMyBehavior
+
+
+class TestMyBehavior(unittest.TestCase):
+    """Tests para behavior personalizado"""
+
+    layer = MY_PACKAGE_INTEGRATION_TESTING
+
+    def setUp(self):
+        """Configuración inicial"""
+        self.portal = self.layer['portal']
+        setRoles(self.portal, TEST_USER_ID, ['Manager'])
+
+    def test_behavior_available(self):
+        """Test que behavior está disponible"""
+        content = api.content.create(
+            container=self.portal,
+            type='Document',
+            id='doc1',
+        )
+        behavior = IMyBehavior(content)
+        self.assertIsNotNone(behavior)
+
+    def test_behavior_fields(self):
+        """Test campos del behavior"""
+        content = api.content.create(
+            container=self.portal,
+            type='Document',
+            id='doc1',
+        )
+        behavior = IMyBehavior(content)
+        self.assertTrue(hasattr(behavior, 'custom_attribute'))
+```
+
+## ⚙️ Tests Funcionales
+
+### Características
+- Requieren layer funcional
+- Simulan requests HTTP
+- Testing de vistas y formularios
+- Más lentos, más completos
+
+### Ejemplo: Vista
+```python
+import unittest
+from plone import api
+from plone.app.testing import (
+    setRoles,
+    TEST_USER_ID,
+    TEST_USER_NAME,
+    TEST_USER_PASSWORD,
+)
+from plone.testing.z2 import Browser
+from my.package.testing import MY_PACKAGE_FUNCTIONAL_TESTING
+
+
+class TestMyView(unittest.TestCase):
+    """Tests funcionales para vista personalizada"""
+
+    layer = MY_PACKAGE_FUNCTIONAL_TESTING
+
+    def setUp(self):
+        """Configuración inicial"""
+        self.portal = self.layer['portal']
+        self.request = self.layer['request']
+        setRoles(self.portal, TEST_USER_ID, ['Manager'])
+
+        # Crear contenido de test
+        self.content = api.content.create(
+            container=self.portal,
+            type='Document',
+            id='doc1',
+            title='Test Document',
+        )
+
+        # Browser
+        self.browser = Browser(self.layer['app'])
+        self.browser.handleErrors = False
+
+    def test_view_renders(self):
+        """Test renderizado de vista"""
+        self.browser.open(self.content.absolute_url())
+        self.assertIn('Test Document', self.browser.contents)
+
+    def test_view_authenticated(self):
+        """Test vista con usuario autenticado"""
+        self.browser.addHeader(
+            'Authorization',
+            f'Basic {TEST_USER_NAME}:{TEST_USER_PASSWORD}'
+        )
+        self.browser.open(self.content.absolute_url())
+        self.assertEqual(self.browser.status, 200)
+
+    def test_edit_form(self):
+        """Test formulario de edición"""
+        self.browser.addHeader(
+            'Authorization',
+            f'Basic {TEST_USER_NAME}:{TEST_USER_PASSWORD}'
+        )
+        self.browser.open(f'{self.content.absolute_url()}/edit')
+        self.assertIn('form', self.browser.contents)
+```
+
+## 🎯 Tests Funcionales Avanzados: Lecciones Aprendidas
+
+### ⚠️ IMPORTANTE: No usar TestRequest en Tests Funcionales
+
+**❌ NO HACER**:
+```python
+from plone.testing.z2 import TestRequest
+
+def test_my_view(self):
+    request = TestRequest()  # ❌ NO FUNCIONA en tests funcionales
+```
+
+**✅ HACER**:
+```python
+def setUp(self):
+    """Configuración inicial"""
+    self.portal = self.layer['portal']
+    self.app = self.layer['app']
+    self.request = self.layer['request']  # ✅ Usar request del layer
+```
+
+### 📝 Prints Informativos para Seguimiento
+
+Los tests funcionales complejos deben incluir prints informativos para facilitar el seguimiento:
+
+```python
+import unittest
+import warnings
+from plone import api
+from plone.app.testing import setRoles, TEST_USER_ID, TEST_USER_NAME, login, logout
+from AccessControl import Unauthorized
+from my.package.testing import MY_PACKAGE_FUNCTIONAL_TESTING
+
+
+class TestComplexPermissions(unittest.TestCase):
+    """Tests funcionales con prints informativos"""
+
+    layer = MY_PACKAGE_FUNCTIONAL_TESTING
+
+    def setUp(self):
+        # Suprimir warnings molestos
+        warnings.filterwarnings("ignore", category=ResourceWarning,
+                                message=".*unclosed file.*")
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+        self.app = self.layer['app']
+        self.portal = self.layer['portal']
+        self.request = self.layer['request']  # ✅ Request del layer
+
+        # Setup inicial...
+        logout()
+
+    def test_permissions_as_secretari(self):
+        """Test permisos de OG1-Secretari"""
+        print("\n✅ Verificando permisos del rol OG1-Secretari")
+
+        logout()
+        setRoles(self.portal, TEST_USER_ID, ['OG1-Secretari'])
+        login(self.portal, TEST_USER_NAME)
+
+        # Test estado PLANIFICADA
+        print("  ✓ Verificando acceso en sesión PLANIFICADA")
+        self.assertTrue(self.content.restrictedTraverse('view')())
+        print("  ✓ Acceso correcto a sesión PLANIFICADA")
+
+        # Test estado CONVOCADA
+        print("  ✓ Verificando acceso en sesión CONVOCADA")
+        self.assertTrue(self.content2.restrictedTraverse('view')())
+        print("  ✓ Acceso correcto a sesión CONVOCADA")
+
+        print("  ✓ Verificación completa como OG1-Secretari")
+        logout()
+
+    def test_permissions_as_membre(self):
+        """Test restricciones de OG3-Membre"""
+        print("\n❌ Verificando restricciones del rol OG3-Membre")
+
+        logout()
+        setRoles(self.portal, TEST_USER_ID, ['OG3-Membre'])
+        login(self.portal, TEST_USER_NAME)
+
+        # Test restricción en PLANIFICADA
+        print("  ✓ Verificando restricciones en sesión PLANIFICADA")
+        with self.assertRaises(Unauthorized):
+            self.content.restrictedTraverse('view')()
+        print("  ✓ Acceso denegado correctamente en sesión PLANIFICADA")
+
+        # Test acceso permitido en CONVOCADA
+        print("  ✓ Verificando acceso permitido en sesión CONVOCADA")
+        self.assertTrue(self.content2.restrictedTraverse('view')())
+        print("  ✓ Acceso permitido en sesión CONVOCADA")
+
+        print("  ✓ Verificación completa como OG3-Membre")
+        logout()
+```
+
+### 🎨 Convenciones de Prints Informativos
+
+#### Emojis para mejor visibilidad
+```python
+# Inicio de test con acceso permitido
+print("\n✅ Verificando permisos del rol X")
+
+# Inicio de test con restricciones
+print("\n❌ Verificando restricciones del rol Y")
+
+# Pasos intermedios exitosos
+print("  ✓ Acceso correcto a...")
+print("  ✓ Verificación completa como...")
+
+# Restricciones aplicadas correctamente
+print("  ✓ Acceso denegado correctamente en...")
+print("  ✓ Restricciones aplicadas correctamente en...")
+```
+
+#### Estructura de prints
+```python
+# 1. Print de inicio de test (nivel principal)
+print("\n✅ Verificando permisos del rol OG1-Secretari en órgano membres")
+
+# 2. Print de contexto adicional si hay combinaciones de roles
+print("  ✓ Verificando permisos como OG1-Secretari (con OG2-Editor)")
+
+# 3. Prints de progreso por sección
+print("  ✓ Acceso correcto a archivos en sesión PLANIFICADA")
+print("  ✓ Acceso correcto a archivos en sesión CONVOCADA")
+
+# 4. Print de finalización
+print("  ✓ Verificación completa como OG1-Secretari")
+```
+
+### 📦 Template Completo de Test Funcional con Prints
+
+```python
+import unittest
+import warnings
+from AccessControl import Unauthorized
+from plone import api
+from plone.app.testing import (
+    TEST_USER_ID,
+    TEST_USER_NAME,
+    login,
+    logout,
+    setRoles,
+)
+from zope.component import getMultiAdapter
+from Products.CMFPlone.interfaces import ISelectableConstrainTypes
+
+from my.package.testing import MY_PACKAGE_FUNCTIONAL_TESTING
+from my.package.browser.views import DisplayFile, Download
+from zope.publisher.interfaces import NotFound
+
+
+class FunctionalTestCase(unittest.TestCase):
+    """Tests funcionales con prints informativos (Plone 6)."""
+
+    layer = MY_PACKAGE_FUNCTIONAL_TESTING
+
+    def setUp(self):
+        """Configuración inicial del test."""
+        # Suprimir warnings molestos
+        warnings.filterwarnings("ignore", category=ResourceWarning,
+                                message=".*unclosed file.*")
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+        # Referencias del layer
+        self.app = self.layer['app']
+        self.portal = self.layer['portal']
+        self.request = self.layer['request']  # ✅ Request del layer
+
+        # Setup de estructura de contenido
+        # ... crear contenido necesario ...
+
+        logout()
+
+    def should_view_as_role_x(self, root_path, roles_info=""):
+        """Helper para verificar permisos de un rol específico."""
+        if roles_info:
+            print(f"  ✓ Verificando permisos como RoleX ({roles_info})")
+        else:
+            print("  ✓ Verificando permisos como RoleX")
+
+        request = self.request  # ✅ Usar request del layer
+
+        # Verificar acceso a contenido
+        self.assertTrue(root_path.item.restrictedTraverse('view')())
+
+        # Verificar acceso a archivos
+        self.assertTrue(
+            DisplayFile(root_path.item.file, request)
+            .publishTraverse(request, 'visiblefile')()
+        )
+
+        print("  ✓ Acceso correcto en estado X")
+        print("  ✓ Verificación completa como RoleX")
+
+    def should_not_view_as_role_y(self, root_path, roles_info=""):
+        """Helper para verificar restricciones de un rol específico."""
+        if roles_info:
+            print(f"  ✓ Verificando restricciones como RoleY ({roles_info})")
+        else:
+            print("  ✓ Verificando restricciones como RoleY")
+
+        request = self.request  # ✅ Usar request del layer
+
+        # Verificar que el acceso está denegado
+        with self.assertRaises(Unauthorized):
+            root_path.item.restrictedTraverse('view')()
+
+        # Verificar que archivos están protegidos
+        with self.assertRaises(NotFound):
+            DisplayFile(root_path.item.file, request)
+            .publishTraverse(request, 'visiblefile')()
+
+        print("  ✓ Acceso denegado correctamente en estado X")
+        print("  ✓ Verificación completa como RoleY")
+
+    def test_permissions_role_x(self):
+        """Test permisos de RoleX."""
+        print("\n✅ Verificando permisos del rol RoleX")
+
+        logout()
+        root_path = self.portal.ca.testingfolder
+
+        # Test con RoleX solo
+        setRoles(self.portal, TEST_USER_ID, ['RoleX'])
+        login(self.portal, TEST_USER_NAME)
+        self.should_view_as_role_x(root_path, "solo")
+        logout()
+
+        # Test con RoleX + RoleY
+        setRoles(self.portal, TEST_USER_ID, ['RoleX', 'RoleY'])
+        login(self.portal, TEST_USER_NAME)
+        self.should_view_as_role_x(root_path, "con RoleY")
+        logout()
+
+    def test_permissions_role_y(self):
+        """Test restricciones de RoleY."""
+        print("\n❌ Verificando restricciones del rol RoleY")
+
+        logout()
+        root_path = self.portal.ca.testingfolder
+
+        setRoles(self.portal, TEST_USER_ID, ['RoleY'])
+        login(self.portal, TEST_USER_NAME)
+        self.should_not_view_as_role_y(root_path, "solo")
+        logout()
+```
+
+### 🔑 Puntos Clave
+
+1. **✅ Siempre usar `self.request` del layer**, nunca crear `TestRequest()`
+2. **✅ Añadir prints informativos** con emojis para seguimiento visual
+3. **✅ Organizar prints por niveles** (principal → contexto → progreso → finalización)
+4. **✅ Suprimir warnings** con `warnings.filterwarnings` en `setUp`
+5. **✅ Usar helpers reutilizables** para verificar permisos de cada rol
+6. **✅ Incluir contexto en prints** cuando se prueban combinaciones de roles
+7. **✅ Tests independientes** con `logout()` entre tests
+
+### ❌ Errores Comunes a Evitar
+
+```python
+# ❌ NO: Crear TestRequest manualmente
+from plone.testing.z2 import TestRequest
+request = TestRequest()
+
+# ✅ SÍ: Usar request del layer
+request = self.request
+
+# ❌ NO: Tests sin prints informativos
+def test_permissions(self):
+    self.assertTrue(...)
+
+# ✅ SÍ: Tests con prints descriptivos
+def test_permissions(self):
+    print("\n✅ Verificando permisos del rol X")
+    self.assertTrue(...)
+    print("  ✓ Verificación completa")
+
+# ❌ NO: Olvidar suprimir warnings
+def setUp(self):
+    self.portal = self.layer['portal']
+
+# ✅ SÍ: Suprimir warnings molestos
+def setUp(self):
+    warnings.filterwarnings("ignore", category=ResourceWarning)
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    self.portal = self.layer['portal']
+
+# ❌ NO: No hacer logout entre tests
+def test_role_a(self):
+    setRoles(self.portal, TEST_USER_ID, ['RoleA'])
+    login(self.portal, TEST_USER_NAME)
+    # test...
+
+def test_role_b(self):  # ❌ Hereda estado del test anterior
+    setRoles(self.portal, TEST_USER_ID, ['RoleB'])
+
+# ✅ SÍ: Logout al inicio y final de cada test
+def test_role_a(self):
+    logout()
+    setRoles(self.portal, TEST_USER_ID, ['RoleA'])
+    login(self.portal, TEST_USER_NAME)
+    # test...
+    logout()
+
+def test_role_b(self):
+    logout()
+    setRoles(self.portal, TEST_USER_ID, ['RoleB'])
+    login(self.portal, TEST_USER_NAME)
+    # test...
+    logout()
+```
+
+## 🔐 Tests de Permisos
+
+### Ejemplo
+```python
+import unittest
+from AccessControl import Unauthorized
+from plone import api
+from plone.app.testing import (
+    login,
+    logout,
+    setRoles,
+    TEST_USER_ID,
+    TEST_USER_NAME,
+)
+from my.package.testing import MY_PACKAGE_INTEGRATION_TESTING
+
+
+class TestPermissions(unittest.TestCase):
+    """Tests de permisos"""
+
+    layer = MY_PACKAGE_INTEGRATION_TESTING
+
+    def setUp(self):
+        """Configuración inicial"""
+        self.portal = self.layer['portal']
+        setRoles(self.portal, TEST_USER_ID, ['Manager'])
+
+        self.content = api.content.create(
+            container=self.portal,
+            type='Document',
+            id='doc1',
+            title='Test Document',
+        )
+
+    def test_anonymous_cannot_add(self):
+        """Test que anónimo no puede añadir"""
+        logout()
+        with self.assertRaises(Unauthorized):
+            api.content.create(
+                container=self.portal,
+                type='Document',
+                id='doc2',
+            )
+
+    def test_member_can_view(self):
+        """Test que miembro puede ver"""
+        setRoles(self.portal, TEST_USER_ID, ['Member'])
+        login(self.portal, TEST_USER_NAME)
+
+        # Verificar que puede acceder
+        self.assertTrue(
+            api.user.has_permission(
+                'View',
+                obj=self.content,
+            )
+        )
+
+    def test_manager_can_edit(self):
+        """Test que manager puede editar"""
+        setRoles(self.portal, TEST_USER_ID, ['Manager'])
+
+        # Verificar que puede modificar
+        self.assertTrue(
+            api.user.has_permission(
+                'Modify portal content',
+                obj=self.content,
+            )
+        )
+```
+
+## 🔄 Tests de Workflow
+
+### Ejemplo
+```python
+import unittest
+from plone import api
+from plone.app.testing import setRoles, TEST_USER_ID
+from my.package.testing import MY_PACKAGE_INTEGRATION_TESTING
+
+
+class TestWorkflow(unittest.TestCase):
+    """Tests de workflow"""
+
+    layer = MY_PACKAGE_INTEGRATION_TESTING
+
+    def setUp(self):
+        """Configuración inicial"""
+        self.portal = self.layer['portal']
+        setRoles(self.portal, TEST_USER_ID, ['Manager'])
+
+        self.content = api.content.create(
+            container=self.portal,
+            type='Document',
+            id='doc1',
+            title='Test Document',
+        )
+
+    def test_initial_state(self):
+        """Test estado inicial"""
+        state = api.content.get_state(self.content)
+        self.assertEqual(state, 'private')
+
+    def test_publish_transition(self):
+        """Test transición a publicado"""
+        api.content.transition(self.content, 'publish')
+        state = api.content.get_state(self.content)
+        self.assertEqual(state, 'published')
+
+    def test_workflow_history(self):
+        """Test historial de workflow"""
+        api.content.transition(self.content, 'publish')
+
+        workflow_history = self.portal.portal_workflow.getHistoryOf(
+            'simple_publication_workflow',
+            self.content
+        )
+
+        self.assertGreater(len(workflow_history), 0)
+        self.assertEqual(workflow_history[-1]['action'], 'publish')
+
+    def test_custom_transition(self):
+        """Test transición personalizada"""
+        # Si tienes workflow custom
+        api.content.transition(self.content, 'my_custom_transition')
+        state = api.content.get_state(self.content)
+        self.assertEqual(state, 'my_custom_state')
+```
+
+## 🎭 Mocking y Patching
+
+### Ejemplo con unittest.mock
+```python
+import unittest
+from unittest.mock import Mock, patch, MagicMock
+from my.package.testing import MY_PACKAGE_INTEGRATION_TESTING
+
+
+class TestWithMocking(unittest.TestCase):
+    """Tests con mocking"""
+
+    layer = MY_PACKAGE_INTEGRATION_TESTING
+
+    def setUp(self):
+        """Configuración inicial"""
+        self.portal = self.layer['portal']
+
+    @patch('my.package.utils.get_external_data')
+    def test_external_api_call(self, mock_get):
+        """Test llamada a API externa"""
+        # Configurar mock
+        mock_get.return_value = {'status': 'ok', 'data': [1, 2, 3]}
+
+        # Ejecutar código que usa la función
+        from my.package.utils import process_external_data
+        result = process_external_data()
+
+        # Verificar
+        mock_get.assert_called_once()
+        self.assertEqual(result['status'], 'ok')
+
+    def test_catalog_query_mock(self):
+        """Test query de catálogo con mock"""
+        mock_catalog = Mock()
+        mock_catalog.return_value = [
+            Mock(Title='Item 1'),
+            Mock(Title='Item 2'),
+        ]
+
+        # Usar mock
+        results = mock_catalog()
+        self.assertEqual(len(results), 2)
+
+    @patch('my.package.views.send_email')
+    def test_email_notification(self, mock_send):
+        """Test envío de email mockeado"""
+        from my.package.views import notify_users
+
+        notify_users(['user@example.com'])
+
+        mock_send.assert_called_once_with(['user@example.com'])
+```
+
+## 📊 Tests de Índices y Metadatos
+
+### Ejemplo
+```python
+import unittest
+from plone import api
+from plone.app.testing import setRoles, TEST_USER_ID
+from my.package.testing import MY_PACKAGE_INTEGRATION_TESTING
+
+
+class TestCatalogIndexes(unittest.TestCase):
+    """Tests para índices de catálogo"""
+
+    layer = MY_PACKAGE_INTEGRATION_TESTING
+
+    def setUp(self):
+        """Configuración inicial"""
+        self.portal = self.layer['portal']
+        self.catalog = self.portal.portal_catalog
+        setRoles(self.portal, TEST_USER_ID, ['Manager'])
+
+    def test_custom_index_exists(self):
+        """Test que índice personalizado existe"""
+        indexes = self.catalog.indexes()
+        self.assertIn('my_custom_index', indexes)
+
+    def test_custom_metadata_exists(self):
+        """Test que metadata personalizado existe"""
+        metadata = self.catalog.schema()
+        self.assertIn('my_custom_metadata', metadata)
+
+    def test_index_content(self):
+        """Test indexación de contenido"""
+        content = api.content.create(
+            container=self.portal,
+            type='Document',
+            id='doc1',
+            title='Test Document',
+        )
+
+        # Buscar usando índice custom
+        results = self.catalog(my_custom_index='value')
+        self.assertEqual(len(results), 1)
+```
+
+## 🚀 Comandos de Test
+
+### Ejecutar Tests
+```bash
+# Todos los tests
+bin/test -s my.package
+
+# Tests específicos
+bin/test -s my.package -t test_content_type
+
+# Tests de un módulo
+bin/test -s my.package -m test_permissions
+
+# Con verbosidad
+bin/test -s my.package -v
+
+# Solo unitarios
+bin/test -s my.package.tests.unit
+
+# Solo integración
+bin/test -s my.package.tests.integration
+
+# Solo funcionales
+bin/test -s my.package.tests.functional
+
+# Coverage
+bin/test -s my.package --coverage
+
+# Coverage con reporte HTML
+bin/test -s my.package --coverage --coverage-dir=htmlcov
+```
+
+## 📋 Buenas Prácticas
+
+### ✅ DO
+- Usar layers apropiados (unit vs integration vs functional)
+- Tests independientes y aislados
+- setUp y tearDown limpios
+- Nombres descriptivos: `test_content_creation_with_valid_data`
+- Un assert por test (cuando sea posible)
+- Testear casos edge y errores
+- Usar factories para crear contenido
+- Mock llamadas externas (APIs, filesystem, email)
+- Tests rápidos (< 1s unitarios, < 5s integración)
+- Documentar qué se testea en docstring
+- Limpiar datos en tearDown
+
+### ❌ DON'T
+- Tests que dependen del orden de ejecución
+- Tests que modifican estado global
+- Tests con sleeps o timeouts
+- Tests que requieren internet
+- Tests sin asserts
+- Tests que testean implementación en lugar de comportamiento
+- Duplicar lógica de negocio en tests
+- Tests gigantes que testean múltiples cosas
+- Hardcodear IDs o paths absolutos
+
+## 🔧 Fixtures y Helpers
+
+### base.py
+```python
+from plone import api
+from plone.app.testing import setRoles, TEST_USER_ID
+
+
+class BaseTestCase:
+    """Clase base para tests con helpers comunes"""
+
+    def create_content(self, portal_type='Document', **kwargs):
+        """Helper genérico para crear contenido"""
+        defaults = {
+            'container': self.portal,
+            'type': portal_type,
+            'id': f'test-{portal_type.lower()}',
+            'title': f'Test {portal_type}',
+        }
+        defaults.update(kwargs)
+        return api.content.create(**defaults)
+
+    def grant_permission(self, permission, user=TEST_USER_ID, roles=['Manager']):
+        """Helper para otorgar permisos"""
+        setRoles(self.portal, user, roles)
+
+    def create_member(self, username='testmember', email='test@example.com'):
+        """Helper para crear usuario"""
+        return api.user.create(
+            email=email,
+            username=username,
+            password='secret123',
+        )
+
+    def login_as(self, username):
+        """Helper para login como usuario"""
+        from plone.app.testing import login
+        login(self.portal, username)
+```
+
+## 📊 Coverage
+
+### Configuración .coveragerc
+
+#### Para paquete en buildout (src/my.package/.coveragerc)
+```ini
+[run]
+source = src/my/package
+
+[report]
+include =
+    src/my/package/*
+
+omit =
+    */test*
+    */tests/*
+    */testing/*
+
+[html]
+directory = coverage_report
+
+precision = 2
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+```
+
+#### ⚠️ IMPORTANTE: Path Configuration
+
+El `source` debe ser relativo al directorio donde reside el `.coveragerc`:
+
+```ini
+# ✅ CORRECTO: Si .coveragerc está en src/genweb.organs/
+[run]
+source = src/genweb/organs
+
+# ❌ INCORRECTO: Path absoluto o incorrecto
+source = genweb.organs  # No funciona
+source = src/genweb.organs  # Solo si estás en la raíz del buildout
+```
+
+#### Comandos de Coverage
+
+```bash
+# Desde el directorio del paquete (donde está .coveragerc)
+cd src/my.package
+
+# Ejecutar coverage con un test específico
+../../bin/coverage run --source=src/my/package ../../bin/test -s my.package -t test_votaciones
+
+# Ejecutar coverage con todos los tests
+../../bin/coverage run --source=src/my/package ../../bin/test -s my.package
+
+# Generar reporte en texto
+../../bin/coverage report --show-missing
+
+# Generar reporte HTML
+../../bin/coverage html -d coverage_report
+
+# Abrir en navegador
+open coverage_report/index.html
+```
+
+### Objetivo Coverage
+- Unitarios: > 80%
+- Integración: > 70%
+- Total: > 75%
+
+## 🐛 Debugging Tests
+
+### IPython en Tests
+```python
+def test_debug_example(self):
+    """Test con debugging"""
+    content = self.create_content()
+
+    # Insertar debugger
+    import ipdb; ipdb.set_trace()
+
+    # Continuar test
+    self.assertEqual(content.title, 'Test Document')
+```
+
+### Ejecutar con pdb
+```bash
+# Debugger automático en errores
+bin/test -s my.package -D
+
+# Con ipdb si está instalado
+bin/test -s my.package --ipdb
+```
+
+### Print Debugging
+```python
+def test_with_debug_output(self):
+    """Test con output de debug"""
+    content = self.create_content()
+
+    # Ver estado
+    print(f"Content: {content}")
+    print(f"State: {api.content.get_state(content)}")
+
+    self.assertEqual(content.portal_type, 'Document')
+```
+
+## 📋 Checklist de Testing
+
+### Antes de Commit
+- [ ] Todos los tests pasan
+- [ ] Coverage no baja
+- [ ] No hay tests skipped sin razón
+- [ ] Tests nuevos para nuevas features
+- [ ] Tests de regresión para bugs
+- [ ] Sin prints o debuggers olvidados
+
+### Code Review
+- [ ] Tests claros y descriptivos
+- [ ] Cubren casos edge
+- [ ] No hay lógica compleja en tests
+- [ ] Mocks justificados
+- [ ] Fixtures reutilizables
+- [ ] Documentación en docstrings
+
+### CI/CD
+- [ ] Tests pasan en CI
+- [ ] Coverage reportado
+- [ ] No hay warnings
+- [ ] Tests rápidos (< 5 min total)
+- [ ] Sin dependencias externas
+
+## 🎯 Tipos de Tests por Feature
+
+### Para Content Types
+- Creación
+- Campos y schemas
+- Indexación en catálogo
+- Permissions
+- Workflow states
+
+### Para Behaviors
+- Aplicación a tipos
+- Campos del behavior
+- Adaptación correcta
+- Interacción con otros behaviors
+
+### Para Views
+- Renderizado HTML
+- Permissions de acceso
+- Datos en contexto
+- Formularios y POST
+
+### Para Vocabularies
+- Valores disponibles
+- Filtrado correcto
+- Performance con muchos items
+- Internacionalización
+
+### Para Upgrades
+- Versión inicial y final
+- Migración de datos
+- Sin errores en logs
+- Rollback posible
+
+### Para Workflows
+- Estados definidos
+- Transiciones válidas
+- Permissions por estado
+- Guards funcionan
+
+## 🔄 Testing de Migración
+
+### Ejemplo
+```python
+import unittest
+from plone import api
+from plone.app.testing import setRoles, TEST_USER_ID
+from my.package.testing import MY_PACKAGE_INTEGRATION_TESTING
+
+
+class TestMigration(unittest.TestCase):
+    """Tests de migración de datos"""
+
+    layer = MY_PACKAGE_INTEGRATION_TESTING
+
+    def setUp(self):
+        """Configuración inicial"""
+        self.portal = self.layer['portal']
+        setRoles(self.portal, TEST_USER_ID, ['Manager'])
+
+    def test_upgrade_step(self):
+        """Test paso de actualización"""
+        from my.package.upgrades import upgrade_to_1001
+
+        # Ejecutar upgrade
+        upgrade_to_1001(self.portal)
+
+        # Verificar cambios
+        # ...
+
+    def test_data_migration(self):
+        """Test migración de datos"""
+        # Crear contenido con formato viejo
+        content = api.content.create(
+            container=self.portal,
+            type='Document',
+            id='doc1',
+        )
+        content.old_field = "old_value"
+
+        # Ejecutar migración
+        from my.package.migration import migrate_data
+        migrate_data(content)
+
+        # Verificar formato nuevo
+        self.assertTrue(hasattr(content, 'new_field'))
+        self.assertEqual(content.new_field, "old_value")
+```
+
+## 🌐 Testing Internacionalización
+
+### Ejemplo
+```python
+import unittest
+from my.package.testing import MY_PACKAGE_INTEGRATION_TESTING
+
+
+class TestI18N(unittest.TestCase):
+    """Tests de internacionalización"""
+
+    layer = MY_PACKAGE_INTEGRATION_TESTING
+
+    def test_translations_exist(self):
+        """Test que existen traducciones"""
+        from zope.i18n import translate
+
+        msgid = 'my_package_label'
+
+        # Catalán
+        translation_ca = translate(msgid, target_language='ca')
+        self.assertNotEqual(translation_ca, msgid)
+
+        # Español
+        translation_es = translate(msgid, target_language='es')
+        self.assertNotEqual(translation_es, msgid)
+
+        # Inglés
+        translation_en = translate(msgid, target_language='en')
+        self.assertNotEqual(translation_en, msgid)
+```
+
+## 🎨 Testing de Templates
+
+### Ejemplo
+```python
+import unittest
+from plone import api
+from plone.app.testing import setRoles, TEST_USER_ID
+from my.package.testing import MY_PACKAGE_INTEGRATION_TESTING
+
+
+class TestTemplates(unittest.TestCase):
+    """Tests para templates"""
+
+    layer = MY_PACKAGE_INTEGRATION_TESTING
+
+    def setUp(self):
+        """Configuración inicial"""
+        self.portal = self.layer['portal']
+        self.request = self.layer['request']
+        setRoles(self.portal, TEST_USER_ID, ['Manager'])
+
+    def test_template_renders(self):
+        """Test que template renderiza"""
+        content = api.content.create(
+            container=self.portal,
+            type='Document',
+            id='doc1',
+        )
+
+        view = content.restrictedTraverse('@@my_view')
+        html = view()
+
+        self.assertIn('<html', html)
+        self.assertIn('</html>', html)
+
+    def test_template_variables(self):
+        """Test variables en template"""
+        content = api.content.create(
+            container=self.portal,
+            type='Document',
+            id='doc1',
+            title='Test Title',
+        )
+
+        view = content.restrictedTraverse('@@my_view')
+        html = view()
+
+        self.assertIn('Test Title', html)
+```
+
+## 📝 Documentación de Tests Nuevos
+
+### ⚠️ IMPORTANTE: Siempre que se cree un test nuevo, actualizar la documentación
+
+Cuando crees un test nuevo, **debes actualizar** estos archivos para mantener la documentación sincronizada:
+
+#### 1️⃣ **README_TESTS.md** (src/my.package/tests/README_TESTS.md)
+
+**Añadir entrada en la lista de tests:**
+
+```markdown
+X. **test_nuevo_nombre.py** ⭐ NUEVO
+   - Descripción breve del test
+   - Qué permisos/funcionalidad verifica
+   - Número de tests implementados
+```
+
+**Añadir comando de ejecución:**
+
+```markdown
+#### Tests de [nombre descriptivo] ⭐ NUEVO
+\```bash
+./bin/test -s my.package -t test_nuevo_nombre
+\```
+```
+
+**Actualizar resumen final:**
+
+```markdown
+**Total: X/X tests (100%)**
+**Y tests funcionales en total**:
+- ✅ N tests - [Descripción del nuevo test]
+```
+
+#### 2️⃣ **tests_coverage.md** (src/my.package/docs/tests_coverage.md)
+
+**Añadir sección completa con tabla de permisos:**
+
+```markdown
+### X. [Título del Test]
+**Archivo**: `test_nuevo_nombre.py` ⭐ IMPLEMENTADO
+
+**Cubre**:
+
+| Acción/Permiso | Rol1 | Rol2 | Rol3 | ... |
+|----------------|------|------|------|-----|
+| **Acción 1** | ✅ | ❌ | ✅ | ... |
+| **Acción 2** | ✅ | ✅ | ❌ | ... |
+
+**Nota**: Explicación adicional si es necesaria
+```
+
+**Actualizar resumen y comandos:**
+
+```markdown
+### ✅ Implementados: X/X tests (100%)
+**Total de tests funcionales implementados: Y tests**
+
+# Tests individuales
+./bin/test -s my.package -t test_nuevo_nombre    # N tests
+```
+
+#### 3️⃣ **resumen_permisos_[proyecto].html** (solo si aplica)
+
+**Solo actualizar si el test verifica permisos nuevos o acciones no documentadas:**
+
+```html
+<h3>NUEVA SECCIÓN</h3>
+<table>
+    <thead>
+        <tr>
+            <th>Acción/Permiso</th>
+            <th>Rol1</th>
+            <th>Rol2</th>
+            <!-- ... más roles ... -->
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td><strong>Nueva acción</strong></td>
+            <td class="check">✅</td>
+            <td class="cross">❌</td>
+            <!-- ... -->
+        </tr>
+    </tbody>
+</table>
+```
+
+**Actualizar el índice HTML:**
+
+```html
+<ul>
+    <li><a href="#nueva-seccion">🆕 Nueva Sección</a></li>
+</ul>
+```
+
+### 📋 Checklist de Documentación de Tests
+
+Al crear un test nuevo, verificar:
+
+- [ ] ✅ **README_TESTS.md**: Añadida entrada + comando + actualizado resumen
+- [ ] ✅ **tests_coverage.md**: Añadida sección + tabla + actualizado resumen
+- [ ] ✅ **resumen_permisos_*.html**: Actualizado (solo si aplica)
+- [ ] ✅ **Prints informativos**: Test incluye prints con emojis (✅/❌/✓)
+- [ ] ✅ **test_zzz_summary**: Test incluye resumen al final
+- [ ] ✅ **Docstring**: Descripción clara del test
+- [ ] ✅ **Total de tests**: Actualizado en TODOS los documentos
+
+### 🔄 Workflow Recomendado
+
+```bash
+# 1. Crear el test
+touch src/my/package/tests/test_nueva_funcionalidad.py
+
+# 2. Implementar el test (ver plantilla abajo)
+
+# 3. Ejecutar el test
+./bin/test -s my.package -t test_nueva_funcionalidad
+
+# 4. Actualizar documentación (README_TESTS.md + tests_coverage.md)
+
+# 5. Ejecutar todos los tests
+./bin/test -s my.package
+
+# 6. Verificar cobertura
+cd src/my.package
+../../bin/coverage run --source=src/my/package ../../bin/test -s my.package
+../../bin/coverage html -d coverage_report
+
+# 7. Commit
+git add .
+git commit -m "test: añadir tests para [funcionalidad]
+
+- Implementados X tests para verificar [qué]
+- Actualizada documentación (README_TESTS.md, tests_coverage.md)"
+```
+
+### 📄 Plantilla de Test con Documentación
+
+```python
+"""Tests para [funcionalidad].
+
+Este módulo verifica:
+- Permiso A para Rol1, Rol2
+- Permiso B para Rol3
+- Restricción C para Rol4
+"""
+
+import unittest
+import warnings
+from AccessControl import Unauthorized
+from plone import api
+from plone.app.testing import (
+    TEST_USER_ID,
+    TEST_USER_NAME,
+    login,
+    logout,
+    setRoles,
+)
+
+from my.package.testing import MY_PACKAGE_FUNCTIONAL_TESTING
+
+
+class TestNuevaFuncionalidad(unittest.TestCase):
+    """Tests funcionales para [descripción].
+
+    Verifica los permisos de [acción] para los diferentes roles.
+    """
+
+    layer = MY_PACKAGE_FUNCTIONAL_TESTING
+
+    def setUp(self):
+        """Configuración inicial del test."""
+        # Suprimir warnings
+        warnings.filterwarnings("ignore", category=ResourceWarning)
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+        # Referencias del layer
+        self.portal = self.layer['portal']
+        self.request = self.layer['request']
+
+        # Setup de contenido
+        # ...
+
+        logout()
+
+    def test_rol1_puede_accion(self):
+        """Test que Rol1 puede realizar acción."""
+        print("\n✅ Verificando permisos del rol Rol1")
+
+        logout()
+        setRoles(self.portal, TEST_USER_ID, ['Rol1'])
+        login(self.portal, TEST_USER_NAME)
+
+        print("  ✓ Verificando acceso a acción")
+        self.assertTrue(...)
+        print("  ✓ Acceso correcto")
+
+        print("  ✓ Verificación completa como Rol1")
+        logout()
+
+    def test_rol2_no_puede_accion(self):
+        """Test que Rol2 NO puede realizar acción."""
+        print("\n❌ Verificando restricciones del rol Rol2")
+
+        logout()
+        setRoles(self.portal, TEST_USER_ID, ['Rol2'])
+        login(self.portal, TEST_USER_NAME)
+
+        print("  ✓ Verificando restricciones")
+        with self.assertRaises(Unauthorized):
+            ...
+        print("  ✓ Acceso denegado correctamente")
+
+        print("  ✓ Verificación completa como Rol2")
+        logout()
+
+    def test_zzz_summary(self):
+        """Resumen informativo de permisos verificados."""
+        print("\n" + "=" * 70)
+        print("📊 RESUMEN - Tests de [Funcionalidad]")
+        print("=" * 70)
+
+        print("\n✅ Permisos verificados:")
+        print("  - Rol1: PUEDE realizar acción")
+        print("  - Rol2: NO puede realizar acción")
+
+        print("\n📋 Total: X tests implementados")
+        print("✅ Estado: Todos los tests pasando")
+        print("=" * 70)
+```
+
+## ✅ Checklist antes de Commit
+
+### Tests
+- [ ] Todos los tests pasan localmente (`./bin/test -s my.package`)
+- [ ] Coverage no ha bajado
+- [ ] Sin `print()` ni `import ipdb; ipdb.set_trace()` olvidados (excepto prints informativos)
+- [ ] Tests nuevos para nuevas features
+- [ ] Tests de regresión para bugs corregidos
+
+### Código
+- [ ] Docstrings descriptivos en todos los tests
+- [ ] Nombres de tests claros: `test_<accion>_<resultado_esperado>`
+- [ ] Sin dependencias externas (APIs, servicios web)
+- [ ] Tests independientes (sin orden de ejecución requerido)
+- [ ] Datos de test en fixtures o setUp (no hardcodeados)
+- [ ] tearDown limpia correctamente
+
+### **📝 Documentación** (CRÍTICO)
+- [ ] **✅ README_TESTS.md actualizado** (entrada + comando + resumen)
+- [ ] **✅ tests_coverage.md actualizado** (sección + tabla + resumen)
+- [ ] **✅ resumen_permisos_*.html actualizado** (solo si aplica)
+- [ ] **✅ Total de tests actualizado** en todos los documentos
+- [ ] **✅ Prints informativos** con emojis en el test
+- [ ] **✅ test_zzz_summary** incluido al final
+
+### Git
+- [ ] Mensaje de commit convencional con descripción de documentación actualizada
+
+## 📊 Objetivos de Coverage
+
+| Categoría | Objetivo | Mínimo Aceptable |
+|-----------|----------|------------------|
+| Tests Unitarios | > 80% | 70% |
+| Tests Integración | > 70% | 60% |
+| **Coverage Total** | **> 75%** | **65%** |
+| Código Crítico | 100% | 90% |
+
+### Qué cubrir prioritariamente
+1. 🔴 **Crítico** (100%): Permisos, seguridad, migración de datos
+2. 🟠 **Alto** (90%): Business logic, workflows, content types
+3. 🟡 **Medio** (75%): Views, behaviors, vocabularies
+4. 🟢 **Bajo** (50%): Templates, helpers, utilidades simples
+
+## 🔍 Troubleshooting Tests
+
+### Error: `ComponentLookupError`
+**Causa**: Componente no registrado en ZCML
+
+**Solución**:
+```python
+# En testing.py
+def setUpZope(self, app, configurationContext):
+    self.loadZCML(package=my.package)
+```
+
+### Error: `Unauthorized`
+**Causa**: Faltan roles o no hay login
+
+**Solución**:
+```python
+from plone.app.testing import setRoles, login, TEST_USER_ID, TEST_USER_NAME
+
+# Opción 1: Dar roles
+setRoles(self.portal, TEST_USER_ID, ['Manager'])
+
+# Opción 2: Login explícito
+login(self.portal, TEST_USER_NAME)
+```
+
+### Error: `AttributeError: 'NoneType' object has no attribute 'portal_type'`
+**Causa**: `self.layer['portal']` no disponible o contenido no creado
+
+**Solución**:
+```python
+def setUp(self):
+    self.portal = self.layer['portal']
+    self.request = self.layer['request']
+    # Verificar que existen
+    self.assertIsNotNone(self.portal)
+```
+
+### Tests lentos
+**Causas y soluciones**:
+- Usar `INTEGRATION_TESTING` en lugar de `FUNCTIONAL_TESTING` cuando sea posible
+- Evitar `api.content.create()` repetido → crear fixtures en `setUp`
+- Mock de servicios externos (email, APIs, filesystem)
+- Evitar `time.sleep()` → usar eventos o mocks
+
+### Error: `ImportError` en tests
+**Causa**: Dependencias no instaladas o ZCML no cargado
+
+**Solución**:
+```python
+# En testing.py, cargar dependencias
+def setUpZope(self, app, configurationContext):
+    import my.dependency
+    self.loadZCML(package=my.dependency)
+    self.loadZCML(package=my.package)
+```
+
+### Tests intermitentes (flaky)
+**Causas comunes**:
+- Tests que dependen del orden de ejecución
+- Estado compartido entre tests
+- Uso de `datetime.now()` sin mock
+- Race conditions
+
+**Solución**:
+```python
+# Mock de datetime
+from unittest.mock import patch
+from datetime import datetime
+
+@patch('my.package.utils.datetime')
+def test_with_fixed_datetime(self, mock_datetime):
+    mock_datetime.now.return_value = datetime(2024, 1, 1, 12, 0, 0)
+    # Test con fecha fija
+```
+
+### Error: `KeyError` en `self.layer['portal']`
+**Causa**: Layer no inicializado correctamente
+
+**Solución**:
+```python
+# Verificar que la layer está definida
+class TestMyFeature(unittest.TestCase):
+    layer = MY_PACKAGE_INTEGRATION_TESTING  # ← Importante
+```
+
+## 💡 Tips Avanzados
+
+### Testing de RichText Fields
+```python
+from plone.app.textfield.value import RichTextValue
+
+content = api.content.create(
+    container=self.portal,
+    type='Document',
+    id='doc1',
+    text=RichTextValue('<p>HTML content</p>', 'text/html', 'text/html')
+)
+```
+
+### Testing de Acquisition
+```python
+# context.organType funciona por Acquisition
+organ = api.content.create(type='Organ', organType='open_organ', ...)
+session = api.content.create(container=organ, type='Session', ...)
+
+# session.organType funciona por Acquisition ✅
+self.assertEqual(session.organType, 'open_organ')
+```
+
+### Testing de Workflow con Transiciones
+```python
+# Aplicar transiciones en orden
+from plone import api
+
+session = api.content.create(...)
+api.content.transition(obj=session, transition='convocar')
+api.content.transition(obj=session, transition='realitzar')
+api.content.transition(obj=session, transition='tancar')
+
+state = api.content.get_state(session)
+self.assertEqual(state, 'tancada')
+```
+
+### Suprimir Warnings en Tests
+```python
+import warnings
+
+def setUp(self):
+    # Suprimir ResourceWarnings de blobs
+    warnings.filterwarnings("ignore", category=ResourceWarning)
+
+    # Suprimir DeprecationWarnings de Plone
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+```
