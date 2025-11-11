@@ -113,7 +113,9 @@ report.html
 .vscode/
 reports/
 
+# macOS
 .DS_Store
+**/.DS_Store
 
 # backups
 versions.cfg.*
