@@ -84,31 +84,43 @@ src/genweb6.core/src/genweb6/core/locales/en/LC_MESSAGES/genweb.po
 
 ## 🧪 Pruebas Realizadas
 
-Se creó un script de prueba standalone que verifica:
+Se crearon tests unitarios y de integración en `genweb6.core`:
 
-### Casos de Prueba Ejecutados
+**Archivo:** `src/genweb6.core/src/genweb6/core/tests/test_portrait_validation.py`
 
-✅ **Imágenes válidas (DEBEN aceptarse):**
-- JPEG con magic bytes correctos → ✓ PASS
-- PNG con magic bytes correctos → ✓ PASS  
-- WEBP con magic bytes correctos → ✓ PASS
+### Casos de Prueba Implementados
 
-✅ **Archivos maliciosos (DEBEN rechazarse):**
-- PHP shell (`<?php system(...)`) → ✓ PASS (rechazado)
-- Shell script (`#!/bin/bash`) → ✓ PASS (rechazado)
-- Texto plano → ✓ PASS (rechazado)
-- GIF (no en whitelist) → ✓ PASS (rechazado)
+**Tests Unitarios (PortraitValidationUnitTest):**
+- ✅ Validación JPEG por magic bytes
+- ✅ Validación PNG por magic bytes
+- ✅ Validación WebP por magic bytes
+- ✅ Rechazo de archivos PHP
+- ✅ Rechazo de shell scripts
+- ✅ Rechazo de archivos de texto
+- ✅ Rechazo de GIF (no en whitelist)
+- ✅ Rechazo de archivos vacíos
+- ✅ Rechazo de archivos demasiado pequeños
+- ✅ Validación con objetos file-like
+
+**Tests de Integración (PortraitUploadIntegrationTest):**
+- ✅ Aceptación de imágenes válidas en validate_portrait_upload
+- ✅ Rechazo de archivos maliciosos en validate_portrait_upload
+- ✅ Manejo correcto de valores None
+
+**Tests de Escenarios de Seguridad (SecurityScenarioTest):**
+- ✅ Bloqueo de shell.php (escenario real reportado)
+- ✅ Rechazo de PHP disfrazado como .jpg (no confía en extensión)
+- ✅ Aceptación de JPEG real con extensión .php (solo valida contenido)
 
 ### Resultado de las Pruebas
 
 ```bash
-$ python3.11 test_portrait_validation_standalone.py
+$ ./bin/test -s genweb6.core -t test_portrait_validation
 
-✓ TODAS LAS VALIDACIONES PASARON
-  El sistema está protegido contra subida de archivos maliciosos.
+Total: 17 tests, 0 failures, 0 errors and 0 skipped in 3.552 seconds.
 ```
 
-**7 de 7 pruebas pasaron correctamente.**
+**17 tests pasaron correctamente** (14 unitarios + 3 integración).
 
 ## 🚀 Despliegue
 
@@ -132,22 +144,22 @@ Deben existir los archivos `.mo` para ca, es y en.
 3. **Probar manualmente:**
 
    a. Acceder a `http://localhost:11001/998/govern/personal-information`
-   
+
    b. Intentar subir un archivo `test.php` con contenido:
       ```php
       <?php echo "test"; ?>
       ```
-   
+
    c. Verificar que se muestra el mensaje de error
-   
+
    d. Verificar que el archivo **NO** se guarda en el servidor
 
 4. **Probar con imagen válida:**
 
    a. Subir una imagen JPG, PNG o WEBP real
-   
+
    b. Verificar que se acepta correctamente
-   
+
    c. Verificar que el portrait se muestra en el perfil
 
 ### Verificación en Producción
@@ -167,8 +179,8 @@ El sistema ahora registra:
 **Intentos de subida de archivos inválidos:**
 
 ```
-WARNING - Intento de subir archivo no válido como portrait. 
-Usuario: username, Filename: shell.php, 
+WARNING - Intento de subir archivo no válido como portrait.
+Usuario: username, Filename: shell.php,
 Error: El fitxer d'imatge no és vàlid
 ```
 
@@ -225,17 +237,19 @@ Esta validación es más segura que confiar en la extensión del archivo.
 Para verificar que el fix está funcionando:
 
 ```bash
-# 1. Ejecutar las pruebas
-python3.11 test_portrait_validation_standalone.py
+# 1. Ejecutar los tests unitarios y de integración
+cd /Users/pilarmarinas/Development/Plone/organs6.buildout
+./bin/test -s genweb6.core -t test_portrait_validation
 
-# 2. Reiniciar la instancia
+# 2. Ejecutar todos los tests del paquete core
+./bin/test -s genweb6.core
+
+# 3. Reiniciar la instancia
 ./bin/instance restart
 
-# 3. Intentar subir un archivo malicioso
-# Debe mostrar error y NO guardarse
-
-# 4. Subir una imagen válida
-# Debe funcionar correctamente
+# 4. Verificación manual:
+# - Intentar subir un archivo malicioso (debe mostrar error y NO guardarse)
+# - Subir una imagen válida (debe funcionar correctamente)
 ```
 
 ## 📞 Contacto
@@ -248,7 +262,6 @@ Para cualquier pregunta o problema relacionado con este fix de seguridad:
 
 ---
 
-**Fecha de implementación:** 2025-11-11  
-**Severidad:** Alta  
+**Fecha de implementación:** 2025-11-11
+**Severidad:** Alta
 **Estado:** ✅ Implementado y Probado
-
